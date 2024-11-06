@@ -5,18 +5,17 @@ import mono from '../assets/mono.jpg'
 import mcv from '../assets/mcv.webp'
 import { useNavigate } from 'react-router-dom';
 
+const machines = [
+  { id: 'machine1', image: mono, title: 'MONO 200', subtitle: 'SMDDC' },
+  { id: 'machine2',image: mcv, title: 'MCV 450', subtitle: 'SMDDC' },
+];
+
 function MainPage() {
-
-    const machines = [
-        { id: 'machine1', image: mono, title: 'MONO 200', subtitle: 'SMDDC' },
-        { id: 'machine2',image: mcv, title: 'MCV 450', subtitle: 'SMDDC' },
-      ];
-
 
     const navigate = useNavigate();
 
-    const handleCardClick = (machineTitle)=>{
-        navigate(`/${machineTitle}/dashboard`);
+    const handleCardClick = (machineId)=>{
+        navigate(`/${machineId}/home`);
     }
 
   return (
@@ -34,7 +33,7 @@ function MainPage() {
                         style={{ width: 300 }}
                         cover={<img alt={machine.title} src={machine.image} />}
                         className="shadow-md mx-7" // Added horizontal margin here
-                        onClick={() => handleCardClick(machine.title)}
+                        onClick={() => handleCardClick(machine.id)}
                     >
                         <Card.Meta
                             title={machine.title}
@@ -47,4 +46,4 @@ function MainPage() {
   )
 }
 
-export default MainPage
+export { MainPage , machines };

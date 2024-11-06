@@ -1,5 +1,6 @@
 import Dashboard from "./Pages/Dashboard";
-import MainPage from "./Pages/MainPage"
+import Home from "./Pages/Home";
+import {MainPage} from "./Pages/MainPage"
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 
 function App() {
@@ -9,10 +10,10 @@ function App() {
  <Router>
       <Routes>
         <Route path="/" element={<MainPage />} />
-        <Route path="/:machineName/dashboard" element={<Dashboard />} />
-
+        <Route path="/:machineId/home" element={<Home/>} />
       </Routes>
-    </Router>    </>
+    </Router> 
+  </>
   )
 }
 
