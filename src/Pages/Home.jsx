@@ -5,18 +5,51 @@ const { Content } = Layout;
 import { useParams } from 'react-router-dom';
 import { ClockCircleOutlined } from '@ant-design/icons';
 import React, { useEffect, useState } from 'react';
-
 import io from 'socket.io-client';
-
-import { Doughnut, Bar } from "react-chartjs-2";
-
-import { Chart as ChartJS, Title, Tooltip, Legend, ArcElement, BarElement, CategoryScale, LinearScale } from "chart.js";
+import { Doughnut, Bar  } from "react-chartjs-2";
+import { Chart as ChartJS, Title, Tooltip as ChartTooltip, Legend, ArcElement, BarElement, CategoryScale, LinearScale } from "chart.js";
+import {  XAxis as RXaxis, YAxis as RYaxis, CartesianGrid as RCartesianGrid, Tooltip as RTooltip, Legend as RLegend, LineChart as RLineChart, Line as RLine,  } from 'recharts';
 
 // Register required components for Chart.js
-ChartJS.register(Title, Tooltip, Legend, ArcElement, BarElement, CategoryScale, LinearScale);
+ChartJS.register(Title, ChartTooltip, Legend, ArcElement, BarElement, CategoryScale, LinearScale);
 
 
-const socket = io('http://localhost:5000');
+// Register required components for Chart.js
+ChartJS.register(Title, ChartTooltip, Legend, ArcElement, BarElement, CategoryScale, LinearScale);
+
+const data = [
+    { name: 'OEE', value: 64 },
+    { name: 'Availability', value: 71 },
+    { name: 'Performance', value: 84 },
+    { name: 'Quality', value: 91 },
+  ];
+  
+  const colors = ['#66BB6A', '#FFA000','#F57C00', '#0288D1'];
+  
+
+// const socket = io('http://localhost:5000');
+
+const OperationTrendData = [
+  { name: 'Nov 04', RunTime: 1096, IdleTime: 145.28, OffTime: 828.32 },
+  { name: 'Nov 05', RunTime: 1064, IdleTime: 143.51, OffTime: 822.0 },
+  { name: 'Nov 06', RunTime: 1007, IdleTime: 140.95, OffTime: 812.14 },
+  { name: 'Nov 07', RunTime: 949, IdleTime: 148.13, OffTime: 833.0 },
+];
+
+const MachineOperationTrend = () => {
+  return (
+    <RLineChart width={500} height={350} data={OperationTrendData}>
+      <RXaxis dataKey="name" />
+      <RYaxis />
+      <RCartesianGrid strokeDasharray="3 3" />
+      <RTooltip />   #66BB6A', '#FFA500', '#FF6347
+      <RLegend />
+      <RLine type="monotone" dataKey="RunTime" stroke="#66BB6A" />
+      <RLine type="monotone" dataKey="IdleTime" stroke="#FFA500" />
+      <RLine type="monotone" dataKey="OffTime" stroke="#FF6347" />
+    </RLineChart>
+  );
+};
 
 
 export default function Home(){
@@ -24,18 +57,16 @@ export default function Home(){
 
     const currentMachine = machines.find(machine => machine.id === machineId);
 
-    const [data, setData] = useState(null);
-
-    useEffect(() => {
-      socket.on('newData', (latestData) => {
-        setData(latestData);
-      });
+    // useEffect(() => {
+    //   socket.on('newData', (latestData) => {
+    //     setData(latestData);
+    //   });
   
-      // Cleanup on unmount
-      return () => {
-        socket.off('newData');
-      };
-    }, []);
+    //   // Cleanup on unmount
+    //   return () => {
+    //     socket.off('newData');
+    //   };
+    // }, []);
 
     const doughnutData = {
         labels: ['Run Time', 'Idle Time', 'Off Time'],
@@ -47,25 +78,50 @@ export default function Home(){
           },
         ],
       };
-    
-      // Data for Bar chart
+
       const barData = {
-        labels: ['OEE', 'Availability', 'Performance', 'Quality'],
+        labels: data.map(item => item.name),
         datasets: [
           {
-            label: 'Metrics',
-            data: [64, 78, 84, 91], // Sample data
-            backgroundColor: ['#66BB6A', '#F57C00', '#FFA000', '#0288D1'],
-            borderColor: '#1E88E5',
+            data: data.map(item => item.value),
+            backgroundColor: colors,
+            borderColor: colors,
             borderWidth: 1,
           },
         ],
       };
-
+    
+      const barOptions = {
+        responsive: true,
+        plugins: {
+          legend: {
+            display: false,
+          },
+          title: {
+            display: true,
+            text: 'OEE Analysis',
+            font: {
+              size: 16,
+            },
+          },
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            max: 100,
+            ticks: {
+              callback: function(value) {
+                return value + '%';
+              },
+            },
+          },
+        },
+      };
+    
     return (
         <>
         <Dashboard />
-        <Layout style={{ minHeight: '100vh' }}>
+        <Layout style={{ minHeight: '92vh' }}>
         <Content>
             <div>
             <div className="flex">
@@ -140,12 +196,12 @@ export default function Home(){
                <h4 className="font-bold text-5xl ml-28 mt-7 text-white ">64%</h4>
            </div>
 
-           <div className="border-2 border-white rounded-lg w-[310px] h-[208px] bg-[#F57C00] ml-3 ">
+           <div className="border-2 border-white rounded-lg w-[310px] h-[208px] bg-[#FFA000] ml-3 ">
                <h1 className="font-bold self-start text-lg ml-4 mt-3 text-white">Availability</h1>
                <h4 className="font-bold text-5xl ml-28 mt-7 text-white ">78%</h4>
            </div>
 
-           <div className="border-2 border-white rounded-lg w-[310px] h-[208px] bg-[#FFA000] ml-3 ">
+           <div className="border-2 border-white rounded-lg w-[310px] h-[208px] bg-[#F57C00] ml-3 ">
                <h1 className="font-bold self-start text-lg ml-4 mt-3 text-white">Performance</h1>
                <h4 className="font-bold text-5xl ml-28 mt-7 text-white ">84%</h4>
            </div>
@@ -157,32 +213,16 @@ export default function Home(){
         </div>
         </div>
            <div className="flex"> 
-           <div style={{width:'450px' , height:'400px'}}>
-        <h3 className="text-center font-semibold text-lg">Machine Operation</h3>
-        <Doughnut data={doughnutData} />
-      </div>
-
-      {/* Bar Chart */}
-      <div className="w-1/2">
-        <h3 className="text-center font-semibold text-lg">OEE & Performance</h3>
-        <Bar data={barData} options={{
-          responsive: true,
-          plugins: {
-            title: {
-              display: true,
-              text: 'OEE and Performance Metrics',
-            },
-            legend: {
-              position: 'top',
-            },
-          },
-          scales: {
-            x: {
-              beginAtZero: true,
-            },
-          },
-        }} />
-      </div>
+              <div style={{ width: '350px', height: '350px', marginLeft: '40px', marginTop: '30px', border: '1px solid white' , backgroundColor:'white' , borderRadius: '10px'}}>
+                 <Doughnut data={doughnutData} style={{width:'400px', height:'350px'}} />
+             </div>
+             <div style={{ width:'630px', height:'350px',marginLeft: '50px', marginTop: '30px' ,border: '1px solid white' , backgroundColor:'white' , borderRadius: '10px'  }}>
+                <Bar data={barData} options={barOptions} style={{width:'500px', height:'370px'}} />
+              </div>
+              <div style={{ width:'530px', height:'350px',marginLeft: '50px', marginTop: '30px' ,border: '1px solid white' , backgroundColor:'white' , borderRadius: '10px'  }}>
+                 <MachineOperationTrend />
+              </div>
+      
             </div>
 
         </div>
