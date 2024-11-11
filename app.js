@@ -179,59 +179,58 @@ app.get('/oee', async (req, res) => {
         const year = now.getFullYear();
         const currentDate = `${year}-${month}-${day}`; // Format as YYYY-MM-DD
 
-app.get('/shiftTiming', (req, res)=>{
-
-    try {
-        const currentHour = now.getHours();
-
-        // Define shift times
-        const shift1 = { start: 9, end: 17 }; // 9 AM to 5 PM
-        const shift2 = { start: 18, end: 2 }; // 6 PM to 2 AM (next day)
-    
-        if (currentHour >= shift1.start && currentHour < shift1.end) {
-            currentShift = 'Shift 1';
-        } else if ((currentHour >= shift2.start && currentHour <= 23) || (currentHour >= 0 && currentHour < shift2.end)) {
-            currentShift = 'Shift 2';
-        } 
-    
-        if(currentShift === "Shift 1"){
-           shiftTimings= {
-               start: {
-                 date: now.toLocaleDateString(),
-                 time: '09:00:00'
-               },
-               end:{
-                date: now.toLocaleDateString(),
-                time: '17:00:00'
-               }
-          }
-        }
-        else if(currentShift === "Shift 2"){
-            shiftTimings = {
-                start:{
+ app.get('/shiftTiming', (req, res) => {
+            try {
+              const now = new Date();
+              const nextDay = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+              const currentHour = now.getHours();
+          
+              // Define shift times
+              const shift1 = { start: 9, end: 17 }; // 9 AM to 5 PM
+              const shift2 = { start: 18, end: 2 }; // 6 PM to 2 AM (next day)
+          
+              let currentShift;
+              let shiftTimings;
+          
+              if (currentHour >= shift1.start && currentHour < shift1.end) {
+                currentShift = '1';
+                shiftTimings = {
+                  start: {
+                    date: now.toLocaleDateString(),
+                    time: '09:00:00'
+                  },
+                  end: {
+                    date: now.toLocaleDateString(),
+                    time: '17:00:00'
+                  }
+                };
+              } else if ((currentHour >= shift2.start && currentHour <= 23) || (currentHour >= 0 && currentHour < shift2.end)) {
+                currentShift = '2';
+                shiftTimings = {
+                  start: {
                     date: now.toLocaleDateString(),
                     time: '18:00:00'
-                },
-                end:{
+                  },
+                  end: {
                     date: nextDay.toLocaleDateString(),
                     time: '02:00:00'
-                }
+                  }
+                };
+              }
+          
+              // Send response
+              res.json({
+                Shift: currentShift,
+                StartDate: shiftTimings.start.date,
+                StartTime: shiftTimings.start.time,
+                EndDate: shiftTimings.end.date, 
+                EndTime: shiftTimings.end.time
+              });
+            } catch (error) {
+              console.error('Error fetching machine status:', error);
+              res.status(500).json({ error: 'Internal server error' });
             }
-        }    
-        // Send response
-        res.json({
-            Shift : currentShift,
-            Start : [shiftTimings.start.date ,shiftTimings.start.time],
-            End : [shiftTimings.end.date ,shiftTimings.end.time]
-        });
-    } 
-    
-    catch (error) {
-        console.error('Error fetching machine status:', error);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-});
-
+          });
 
 app.get('/machineState' , async(req, res)=>{
 
@@ -439,6 +438,9 @@ app.get('/shiftwise', async (req,res)=>{
         const performance = calculatePerformance(result.rows);
         const quality = calculateQuality(result.rows);
         const oee = calculateOee(availability , performance , quality);
+        const goodpart = calculateGoodPart(result.rows);
+        const actualProducedQuantity = calculateActualProducedQuantity(result.rows);
+        const badpart = actualProducedQuantity - goodpart;
 
         res.json({
             ProductionTime : productionTime,
@@ -447,7 +449,10 @@ app.get('/shiftwise', async (req,res)=>{
             Availability : availability,
             Performance : performance,
             Quality: quality,
-            OEE : oee
+            OEE : oee,
+            PartCount : actualProducedQuantity,
+            GoodPart: goodpart,
+            BadPart : badpart
         })
     }
     catch(error){
@@ -505,7 +510,7 @@ app.get('/weekwise' , async (req,res)=>{
 })
 
 
-app.get('/monthwise' ,async (req, res)=>{
+app.get('/analytics' ,async (req, res)=>{
     try {
         const {startDate , endDate} = req.query;
         
@@ -535,6 +540,10 @@ app.get('/monthwise' ,async (req, res)=>{
         const performance = calculatePerformance(result.rows);
         const quality = calculateQuality(result.rows);
         const oee = calculateOee(availability , performance , quality);
+        const goodpart = calculateGoodPart(result.rows);
+        const actualProducedQuantity = calculateActualProducedQuantity(result.rows);
+        const badpart = actualProducedQuantity - goodpart;
+    
 
         res.json({
             ProductionTime : productionTime,
@@ -543,7 +552,10 @@ app.get('/monthwise' ,async (req, res)=>{
             Availability : availability,
             Performance : performance,
             Quality: quality,
-            OEE : oee
+            OEE : oee,
+            PartCount : actualProducedQuantity,
+            GoodPart: goodpart,
+            BadPart : badpart
         })
 
     } catch (error) {
@@ -620,7 +632,7 @@ app.get('/livedata', async (req,res)=>{
 
 
 io.on('connection', (socket) => {
-    console.log('Client connected');
+    console.log('Client connected to machine data');
   
     // Function to fetch data and emit it to the client
     const fetchLiveData = async () => {
@@ -702,6 +714,83 @@ io.on('connection', (socket) => {
       console.log('Client disconnected');
     });
   });
+
+
+  io.on('connection', (socket) => {
+    console.log('Client connected to shift data');
+  
+    // Function to fetch data and emit it to the client
+    const fetchLiveData = async () => {
+        try {
+            const now = new Date();
+            const nextDay = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+            const currentHour = now.getHours();
+        
+            // Define shift times
+            const shift1 = { start: 9, end: 17 }; // 9 AM to 5 PM
+            const shift2 = { start: 18, end: 2 }; // 6 PM to 2 AM (next day)
+        
+            let currentShift;
+            let shiftTimings;
+        
+            if (currentHour >= shift1.start && currentHour < shift1.end) {
+              currentShift = '1';
+              shiftTimings = {
+                start: {
+                  date: now.toLocaleDateString(),
+                  time: '09:00:00'
+                },
+                end: {
+                  date: now.toLocaleDateString(),
+                  time: '17:00:00'
+                }
+              };
+            } else if ((currentHour >= shift2.start && currentHour <= 23) || (currentHour >= 0 && currentHour < shift2.end)) {
+              currentShift = '2';
+              shiftTimings = {
+                start: {
+                  date: now.toLocaleDateString(),
+                  time: '18:00:00'
+                },
+                end: {
+                  date: nextDay.toLocaleDateString(),
+                  time: '02:00:00'
+                }
+              };
+            }
+        
+            // Send response
+            return{
+              Shift: currentShift,
+              StartDate: shiftTimings.start.date,
+              StartTime: shiftTimings.start.time,
+              EndDate: shiftTimings.end.date, 
+              EndTime: shiftTimings.end.time
+            };
+          } catch (error) {
+            console.error('Error fetching machine status:', error);
+            res.status(500).json({ error: 'Internal server error' });
+          }
+    };
+  
+    // Fetch and emit data every second
+    const interval = setInterval(async () => {
+      try {
+        const data = await fetchLiveData();
+        socket.emit('shiftData', data);
+      } catch (error) {
+        console.error('Error fetching and emitting data:', error);
+      }
+    }, 1000);
+  
+    socket.on('disconnect', () => {
+      clearInterval(interval);
+      console.log('Client disconnected');
+    });
+  });
+
+
+  
   
 
   server.listen(5000, () => {
