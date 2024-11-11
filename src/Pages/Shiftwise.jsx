@@ -1,56 +1,70 @@
-import { Layout } from "antd";
+import { Button, Layout } from "antd";
 import Dashboard from "./Dashboard";
 const { Content } = Layout;
+import { DatePicker , Select } from "antd";
 import { ClockCircleOutlined , DatabaseOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
-import { DatePicker , Button } from "antd";
+import React, { useEffect, useState , useRef} from 'react';
+import MachineStateTimelineChart from "../Components/MachineStateTimelineChart";
 import PieCharts from "../Components/PieCharts";
 import BarCharts from "../Components/BarCharts";
 import DonutCharts from "../Components/DonutCharts";
-import { useState , useEffect } from "react";
-import axios from 'axios';
+import axios from "axios";
+
+// const socket = io('http://localhost:5000');
 
 
+export default function Shiftwise(){
 
-export default function Analytics(){
+      const [data , setData] = useState('');
+      const [date , setDate] = useState('');
+      const [shift , setShift] = useState('');
 
-    const [startDate, setStartDate] = useState(null);
-    const [endDate, setEndDate] = useState(null);
-    const [data, setData] = useState('');
+      const dummyData = [
+        { startTime: 1621209600, endTime: 1621213200, state: 'IDLE' },
+        { startTime: 1621213200, endTime: 1621216800, state: 'PRODUCTION' },
+        { startTime: 1621216800, endTime: 1621220400, state: 'IDLE' },
+        { startTime: 1621220400, endTime: 1621224000, state: 'OFF' },
+        { startTime: 1621224000, endTime: 1621227600, state: 'IDLE' },
+        { startTime: 1621227600, endTime: 1621231200, state: 'PRODUCTION' },
+        { startTime: 1621231200, endTime: 1621234800, state: 'IDLE' },
+        { startTime: 1621234800, endTime: 1621238400, state: 'OFF' }
+      ];
 
-
-        const fetchData = async () => {
-          try {
-            const response = await axios.get('http://localhost:3000/analytics', {
-              params: {
-                startDate: startDate.format('YYYY-MM-DD'),
-                endDate: endDate.format('YYYY-MM-DD')
-              }
-            });
-            setData(response.data);
-            console.log(response.data);
-            console.log("Data:",data);
-          } catch (err) {
-              console.log(err);
-        } 
-        };
-
-        useEffect(() => {
-            if (data) {
-              console.log("Updated Data:", data);
+     const fetchData = async()=>{
+            try {
+              const response = await axios.get('http://localhost:3000/shiftwise' , {
+                params: {
+                  date: date.format('YYYY-MM-DD'),
+                  shift: shift
+                }
+              });
+              setData(response.data);
+              console.log(response.data);
+              console.log(data);
+            } catch (error) {
+                 console.log(err);
             }
-          }, [data]);
-    
-        
+     }
+
+     useEffect(() => {
+      if (data) {
+        console.log("Updated Data:", data);
+      }
+    }, [data]);
+
+
     return(
     <>
-    <Dashboard/>
-         <Layout>
-         <Content style={{ minHeight: '92vh' }}>           
-                 <div style={{marginLeft:'20px'}}>
-                <div className="flex grid-cols-2">
+        <div className="fixed top-0 left-0 w-full z-50 bg-white">
+           <Dashboard />
+        </div>   
+        <Layout className="mt-16">
+        <Content style={{ minHeight: '120vh' }}>
+          <div style={{marginLeft:'20px'}}>
+          <div className="flex grid-cols-2">
             <div>
                 <div style={{width:'1100px' , height:'50px' , border:'1px solid white' , marginTop:'10px' , marginLeft:'50px' , borderRadius:'10px' , backgroundColor:'white'}}>
-                    <h1 style={{paddingLeft:'480px' , paddingTop:'5px' , fontSize:'27px'}}>Analytics</h1>
+                    <h1 style={{paddingLeft:'430px' , paddingTop:'5px' , fontSize:'27px'}}>Shiftwise Analytics</h1>
                 </div> 
             <div className="flex grid-cols-3 ml-3">
                 <div style={{ 
@@ -66,7 +80,7 @@ export default function Analytics(){
                 }}>
                      <DatabaseOutlined style={{ fontSize: '20px', color: '#917072 ', marginRight: '8px' }} />
                <b>Part Count :</b>
-               <span style={{ color: '#917072 ', fontSize: '25px', fontWeight: 'bold' }}> {data.PartCount ? data.PartCount : 0} </span>      
+               <span style={{ color: '#917072 ', fontSize: '25px', fontWeight: 'bold' }}> {data.PartCount ? data.PartCount : 0}</span>
             </div>
 
             <div style={{ 
@@ -106,21 +120,21 @@ export default function Analytics(){
 
             <div className="flex grid-cols-4 mt-3 ml-9">
             <div className="border-2 border-white rounded-lg w-[264px] h-[208px] bg-[#00b4d8] ml-3 flex flex-col items-center">
-              <h1 className="font-bold self-start text-lg ml-4 mt-3 text-white">OEE</h1>
-              <h4 className="font-bold text-5xl text-white mt-7">{data.OEE ? data.OEE : 0}%</h4>
+               <h1 className="font-bold self-start text-lg ml-4 mt-3 text-white">OEE</h1>
+               <h4 className="font-bold text-5xl mt-7 text-white ">{data.OEE ? data.OEE : 0}%</h4>
            </div>
 
-           <div className="border-2 border-white rounded-lg w-[264px] h-[208px] bg-[#39bdaf] ml-3 flex flex-col items-center ">
+           <div className="border-2 border-white rounded-lg w-[264px] h-[208px] bg-[#39bdaf] ml-3 flex flex-col items-center">
                <h1 className="font-bold self-start text-lg ml-4 mt-3 text-white">Availability</h1>
-               <h4 className="font-bold text-5xl text-white mt-7">{data.Availability ? data.Availability : 0}%</h4>
+               <h4 className="font-bold text-5xl mt-7 text-white ">{data.Availability ? data.Availability : 0}%</h4>
            </div>
 
-           <div className="border-2 border-white rounded-lg w-[264px] h-[208px] bg-[#2f6fa1] ml-3 flex flex-col items-center">
+           <div className="border-2 border-white rounded-lg w-[264px] h-[208px] bg-[#2f6fa1] ml-3 flex flex-col items-center ">
                <h1 className="font-bold self-start text-lg ml-4 mt-3 text-white">Performance</h1>
                <h4 className="font-bold text-5xl mt-7 text-white ">{data.Performance ? data.Performance : 0}%</h4>
            </div>
 
-           <div className="border-2 border-white rounded-lg w-[270px] h-[208px] bg-[#fc8042] ml-3 flex flex-col items-center">
+           <div className="border-2 border-white rounded-lg w-[270px] h-[208px] bg-[#fc8042] ml-3 flex flex-col items-center ">
                <h1 className="font-bold self-start text-lg ml-4 mt-3 text-white">Quality</h1>   
                <h4 className="font-bold text-5xl mt-7 text-white ">{data.Quality ? data.Quality : 0}%</h4>
            </div>   
@@ -128,9 +142,12 @@ export default function Analytics(){
             </div>
             <div>
             <div style={{width:'460px' , height:'70px' , border:'1px solid white' , backgroundColor:'white', marginLeft:'25px' , marginTop:'10px' , borderRadius:'10px'}}>
-                 <DatePicker placeholder="Select Start date " onChange={(date) => setStartDate(date)} style={{marginLeft:'20px' , marginTop:'15px' , width:'160px'}} />
-                 <DatePicker placeholder="Select End date "   onChange={(date) => setEndDate(date)} style={{marginLeft:'10px' , marginTop:'15px' , width:'160px'}} />
-                  <Button type="primary" onClick={fetchData} style={{marginLeft:'20px' , marginTop:'15px'}}> Submit</Button>
+                 <DatePicker placeholder="Select Start date " onChange={(date)=> setDate(date)} style={{marginLeft:'20px' , marginTop:'15px' , width:'160px'}} />
+                 <Select placeholder="Select Shift" style={{marginLeft:'20px' , marginTop:'17px' , width:'140px'}} onChange={(shift)=> setShift(shift)} >
+                        <Option value="1">Shift 1</Option>
+                        <Option value="2">Shift 2</Option>
+                    </Select>                  
+                 <Button type="primary" onClick={fetchData} style={{marginLeft:'20px' , marginTop:'15px'}}> Submit</Button>
             </div>
             <div >
             <div style={{ 
@@ -183,9 +200,12 @@ export default function Analytics(){
             </div>
             </div>
             </div>
-              <div className="flex">
-                 <div style={{marginLeft:'30px' , marginTop:'20px'}}>
-                      <PieCharts width='500px' height='210px' Run={data.ProductionTime} Idle={data.IdleTime} Off={data.OffTime} />
+         <div style={{width:'1585px' , height:'200px' , border:'1px solid white' , marginLeft:'50px' , backgroundColor:'white' , borderRadius:'10px' , marginTop:'20px'}}>
+             <MachineStateTimelineChart data={dummyData} />
+          </div>
+          <div className="flex">
+                   <div style={{marginLeft:'30px' , marginTop:'20px'}}>
+                      <PieCharts width='500px' height='210px' Run={data.ProductionTime} Idle={data.IdleTime} Off={data.OffTime}/>
                    </div>
                    <div style={{marginTop:'20px', marginLeft:'20px'}}>
                        <BarCharts width='547px' height='210px' OEE={data.OEE} Availability={data.Availability} Performance={data.Performance} Quality={data.Quality} />
@@ -194,9 +214,10 @@ export default function Analytics(){
                        <DonutCharts width='500px' height='210px' PartCount={data.PartCount} GoodPart={data.GoodPart} BadPart={data.BadPart} />
                    </div>
                </div>
-           </div>
+        
+         </div>
         </Content>
-      </Layout>
+    </Layout>
     </>
    )
 }

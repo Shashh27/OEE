@@ -29,8 +29,8 @@ const MachineStateTimelineChart = ({ data }) => {
       chart: {
         type: 'xrange',
         zoomType: 'x',
-        height: 250, // Reduced height
-        width: 1600 // Reduced width
+        height: 200, // Reduced height
+        width: 1550 // Reduced width
       },
       title: {
         text: 'Machine State Timeline'
