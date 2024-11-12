@@ -16,8 +16,6 @@ const BarCharts = ({width , height , OEE , Availability , Performance , Quality 
     { name: 'Quality', value: parseValue(Quality) },
   ];
 
-  console.log("OEE:" ,OEE , Availability , Performance , Quality);
-
   const colors = ['#00b4d8', '#39bdaf', '#2f6fa1', '#fc8042'];
 
   const chartOptions = {

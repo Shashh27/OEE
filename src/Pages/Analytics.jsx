@@ -20,7 +20,7 @@ export default function Analytics(){
 
         const fetchData = async () => {
           try {
-            const response = await axios.get('http://localhost:3000/analytics', {
+            const response = await axios.get('http://192.168.137.190:3000/analytics', {
               params: {
                 startDate: startDate.format('YYYY-MM-DD'),
                 endDate: endDate.format('YYYY-MM-DD')
@@ -185,13 +185,13 @@ export default function Analytics(){
             </div>
               <div className="flex">
                  <div style={{marginLeft:'30px' , marginTop:'20px'}}>
-                      <PieCharts width='500px' height='210px' Run={data.ProductionTime} Idle={data.IdleTime} Off={data.OffTime} />
+                      <PieCharts width='500px' height='210px' Run={data.ProductionTime ? data.ProductionTime : 0} Idle={data.IdleTime ? data.IdleTime : 0} Off={data.OffTime ? data.OffTime : 0} />
                    </div>
                    <div style={{marginTop:'20px', marginLeft:'20px'}}>
-                       <BarCharts width='547px' height='210px' OEE={data.OEE} Availability={data.Availability} Performance={data.Performance} Quality={data.Quality} />
+                       <BarCharts width='547px' height='210px' OEE={data.OEE ? data.OEE : 0} Availability={data.Availability ? data.Availability : 0} Performance={data.Performance ? data.Performance : 0} Quality={data.Quality ? data.Quality : 0} />
                    </div>
                    <div style={{marginTop:'20px', marginLeft:'20px'}}>
-                       <DonutCharts width='500px' height='210px' PartCount={data.PartCount} GoodPart={data.GoodPart} BadPart={data.BadPart} />
+                       <DonutCharts width='500px' height='210px' PartCount={data.PartCount ? data.PartCount : 0} GoodPart={data.GoodPart ? data.GoodPart : 0} BadPart={data.BadPart ? data.BadPart : 0} />
                    </div>
                </div>
            </div>
