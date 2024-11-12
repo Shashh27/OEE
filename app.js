@@ -10,7 +10,7 @@ const socketIo = require('socket.io');
 const server = http.createServer(app);
 const io = socketIo(server, {
     cors: {
-      origin: 'http://localhost:5173', // Replace with your React app's URL
+      origin: '*', // Replace with your React app's URL
       methods: ['GET', 'POST'],
       allowedHeaders: ['Content-Type'],
     },
@@ -18,7 +18,7 @@ const io = socketIo(server, {
 
   
 app.use(express.json());
-app.use(cors({ origin: 'http://localhost:5173' }));
+app.use(cors({ origin: '*' }));
 
 const moment = require('moment-timezone');
 
@@ -192,7 +192,7 @@ app.get('/oee', async (req, res) => {
               let currentShift;
               let shiftTimings;
           
-              if (currentHour >= shift1.start && currentHour < shift1.end) {
+              if (currentHour >= shift1.start && currentHour < shift2.start) {
                 currentShift = '1';
                 shiftTimings = {
                   start: {
@@ -203,8 +203,8 @@ app.get('/oee', async (req, res) => {
                     date: now.toLocaleDateString(),
                     time: '17:00:00'
                   }
-                };
-              } else if ((currentHour >= shift2.start && currentHour <= 23) || (currentHour >= 0 && currentHour < shift2.end)) {
+                }
+              } else {
                 currentShift = '2';
                 shiftTimings = {
                   start: {
@@ -217,6 +217,7 @@ app.get('/oee', async (req, res) => {
                   }
                 };
               }
+      
           
               // Send response
               res.json({
@@ -317,51 +318,163 @@ const calculateIdleTime = (records) =>{
       return totalMinutes;
 }
 
-const calculateOffTime = (records) =>{
-    let totalMinutes = 0;
+const calculateIdleTimeAnalytics = (records) => {
 
-    // Set shift end times dynamically based on current date
-    const shiftEndFirstShift = '17:00:00';
-    const shiftEndSecondShift = '02:00:00';
+  const recordsByDate = records.reduce((acc, record) => {
+    const date = new Date(record.timestamp).toLocaleDateString();
+    if (!acc[date]) {
+      acc[date] = [];
+    }
+    acc[date].push(record);
+    return acc;
+  }, {});
 
-    for (let i = 0; i < records.length; i++) {
-        if (records[i].machine_status === 'OFF') {
-            const start = new Date(records[i].timestamp);
+  const offTimeByDate = {};
+  let totalOffTime = 0;
 
-            let end;
-            // Check if it's the last row
-            if (i === records.length - 1) {
-                // If the "OFF" status is in the last row, calculate the time till the shift end
-                const shiftEndTime = (start.getHours() < 17) ? shiftEndFirstShift : shiftEndSecondShift;
-                const [hours, minutes, seconds] = shiftEndTime.split(':').map(Number);
-                
-                end = new Date(start);
-                end.setHours(hours, minutes, seconds);
-            } else {
-                // Otherwise, find the next "IDLE" status
-                for (let j = i + 1; j < records.length; j++) {
-                    if (records[j].machine_status === 'IDLE') {
-                        end = new Date(records[j].timestamp);
-                        break;
-                    }
-                }
-            }
+  for (const [date, dateRecords] of Object.entries(recordsByDate)) {
+    let dailyOffTime = 0;
+   
+    for (let i = 0; i < dateRecords.length; i++) {
+      if (dateRecords[i].machine_status === 'IDLE') {
+          const start = new Date(dateRecords[i].timestamp);
+          let end;
+          for (let j = i + 1; j < dateRecords.length; j++) {
+              if (dateRecords[j].machine_status === 'PRODUCTION' || dateRecords[j].machine_status === 'OFF') {
+                  end = new Date(dateRecords[j].timestamp);
+                  break;
+              }
+          }
+          if (end) {
+              const diffInMs = end - start;
+              const diffInMinutes = diffInMs / (1000 * 60); // Convert milliseconds to minutes
 
-            // Calculate the difference in time (in minutes)
-            if (end) {
-                const diffInMs = end - start;
-                const diffInMinutes = diffInMs / (1000 * 60); // Convert milliseconds to minutes
-
-                // Add to total off time
-                if (diffInMinutes > 0) {
-                    totalMinutes += diffInMinutes;
-                }
+              if(diffInMinutes > 0){
+                dailyOffTime += diffInMinutes;
+              }
             }
         }
     }
+    offTimeByDate[date] = dailyOffTime;
+    totalOffTime += dailyOffTime;
+  }
+  return totalOffTime;
+};
 
-    return totalMinutes;
+const calculateOffTime = (records) =>{
+  let totalMinutes = 0;
+
+  // Set shift end times dynamically based on current date
+  const shiftEndFirstShift = '17:00:00';
+  const shiftEndSecondShift = '02:00:00';
+
+  for (let i = 0; i < records.length; i++) {
+      if (records[i].machine_status === 'OFF') {
+          const start = new Date(records[i].timestamp);
+
+          let end;
+          // Check if it's the last row
+          if (i === records.length - 1) {
+              // If the "OFF" status is in the last row, calculate the time till the shift end
+              const shiftEndTime = (start.getHours() < 17) ? shiftEndFirstShift : shiftEndSecondShift;
+              const [hours, minutes, seconds] = shiftEndTime.split(':').map(Number);
+              
+              end = new Date(start);
+              end.setHours(hours, minutes, seconds);
+          } else {
+              // Otherwise, find the next "IDLE" status
+              for (let j = i + 1; j < records.length; j++) {
+                  if (records[j].machine_status === 'IDLE') {
+                      end = new Date(records[j].timestamp);
+                      break;
+                  }
+              }
+          }
+
+          // Calculate the difference in time (in minutes)
+          if (end) {
+              const diffInMs = end - start;
+              const diffInMinutes = diffInMs / (1000 * 60); // Convert milliseconds to minutes
+
+              // Add to total off time
+              if (diffInMinutes > 0) {
+                  totalMinutes += diffInMinutes;
+              }
+          }
+      }
+  }
+
+  return totalMinutes;
 }
+
+const calculateOffTimeByDate = (records) => {
+  // Group records by date
+  const recordsByDate = records.reduce((acc, record) => {
+    const date = new Date(record.timestamp).toLocaleDateString();
+    if (!acc[date]) {
+      acc[date] = [];
+    }
+    acc[date].push(record);
+    return acc;
+  }, {});
+
+  // Calculate off time for each date
+  const offTimeByDate = {};
+  let totalOffTime = 0;
+
+  for (const [date, dateRecords] of Object.entries(recordsByDate)) {
+    let dailyOffTime = 0;
+    const shiftEndFirstShift = '17:00:00';
+    const shiftEndSecondShift = '02:00:00';
+
+    for (let i = 0; i < dateRecords.length; i++) {
+      if (dateRecords[i].machine_status === 'OFF') {
+        const start = new Date(dateRecords[i].timestamp);
+        let end;
+
+        // Check if it's the last row for this date
+        if (i === dateRecords.length - 1) {
+          // If the "OFF" status is in the last row, calculate the time till the shift end
+          const shiftEndTime = (start.getHours() < 17) ? shiftEndFirstShift : shiftEndSecondShift;
+          const [hours, minutes, seconds] = shiftEndTime.split(':').map(Number);
+          
+          end = new Date(start);
+          end.setHours(hours, minutes, seconds);
+          
+          // If second shift end time is on next day, add 24 hours
+          if (shiftEndTime === shiftEndSecondShift && end < start) {
+            end.setDate(end.getDate() + 1);
+          }
+        } else {
+          // Otherwise, find the next "IDLE" status
+          for (let j = i + 1; j < dateRecords.length; j++) {
+            if (dateRecords[j].machine_status === 'IDLE') {
+              end = new Date(dateRecords[j].timestamp);
+              break;
+            }
+          }
+        }
+
+        // Calculate the difference in time (in minutes)
+        if (end) {
+          const diffInMs = end - start;
+          const diffInMinutes = diffInMs / (1000 * 60); // Convert milliseconds to minutes
+
+          // Add to daily off time
+          if (diffInMinutes > 0) {
+            dailyOffTime += diffInMinutes;
+          }
+        }
+      }
+    }
+
+    offTimeByDate[date] = dailyOffTime;
+    totalOffTime += dailyOffTime;
+  }
+
+  return  totalOffTime ;
+};
+
 
 const calculateAvailability = (records) =>{
     const actualProduction = calculateProductionTime(records);
@@ -399,38 +512,42 @@ app.get('/shiftwise', async (req,res)=>{
     try{
         
         const {date , shift} = req.query;
-
+        
         if(!date || !shift){
             return res.status(400).send('Date and shift are required');
         }
-
+        
         const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
         if (!dateRegex.test(date)) {
             return res.status(400).send('Invalid date format. Use YYYY-MM-DD');
         }
-
+        
         if(shift === '1'){
             shiftTimings2 = {
                 start:{
-                    time: '09:00:00'
+                    time: '08:59:00'
                 },
                 end: {
-                    time: '17:00:00'
+                    time: '17:01:00'
                 }
             }
         } else if(shift === '2'){
             shiftTimings2 = {
                 start:{
-                    time: '18:00:00'
+                    time: '17:59:00'
                 },
                 end: {
-                    time: '02:00:00'
+                    time: '02:01:00'
                 }
             }
         }
 
         const result= await pool.query(`select timestamp, machine_status , part_status from new.machine_signal_pool WHERE to_char(timestamp, 'YYYY-MM-DD') = $1  AND to_char(timestamp, 'HH24:MI') BETWEEN $2 AND $3`, [date, shiftTimings2.start.time, shiftTimings2.end.time]);
     
+        result.rows.forEach(row => {
+          row.timestamp = moment(row.timestamp).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');
+         });
+
         const productionTime = calculateProductionTime(result.rows);
         const idleTime = calculateIdleTime(result.rows);
         const offTime = calculateOffTime(result.rows);
@@ -452,7 +569,8 @@ app.get('/shiftwise', async (req,res)=>{
             OEE : oee,
             PartCount : actualProducedQuantity,
             GoodPart: goodpart,
-            BadPart : badpart
+            BadPart : badpart, 
+            Result: result.rows,
         })
     }
     catch(error){
@@ -532,10 +650,14 @@ app.get('/analytics' ,async (req, res)=>{
         const formattedEndDate = inputEndDate.toISOString().split('T')[0];
 
         const result= await pool.query(`select timestamp, machine_status , part_status from new.machine_signal_pool  WHERE to_char(timestamp, 'YYYY-MM-DD') BETWEEN $1 AND $2`,[formattedStartDate, formattedEndDate]);
+        
+        result.rows.forEach(row => {
+          row.timestamp = moment(row.timestamp).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');
+         });
 
         const productionTime = calculateProductionTime(result.rows);
-        const idleTime = calculateIdleTime(result.rows);
-        const offTime = calculateOffTime(result.rows);
+        const idleTime = calculateIdleTimeAnalytics(result.rows);
+        const offTime = calculateOffTimeByDate(result.rows);
         const availability = calculateAvailability(result.rows);
         const performance = calculatePerformance(result.rows);
         const quality = calculateQuality(result.rows);
@@ -555,7 +677,8 @@ app.get('/analytics' ,async (req, res)=>{
             OEE : oee,
             PartCount : actualProducedQuantity,
             GoodPart: goodpart,
-            BadPart : badpart
+            BadPart : badpart,
+            Result: result.rows,
         })
 
     } catch (error) {
@@ -632,166 +755,209 @@ app.get('/livedata', async (req,res)=>{
 
 
 io.on('connection', (socket) => {
-    console.log('Client connected to machine data');
-  
-    // Function to fetch data and emit it to the client
-    const fetchLiveData = async () => {
-      try {
-        let shiftTimings3;
-        const currentHour = new Date().getHours(); // Get the current hour (0-23)
-  
-        if (currentHour >= 9 && currentHour < 17) {
-          shiftTimings3 = {
-            start: {
-              time: '08:59:00'
-            },
-            end: {
-              time: '17:01:00'
-            }
-          };
-        } else if (currentHour >= 18 || currentHour < 2) {
-          shiftTimings3 = {
-            start: {
-              time: '17:59:00'
-            },
-            end: {
-              time: '02:01:00'
-            }
-          };
-        }
-  
-        const result = await pool.query(
-          `SELECT timestamp, machine_status, part_status 
-           FROM new.machine_signal_pool 
-           WHERE to_char(timestamp, 'YYYY-MM-DD') = $1 
-           AND to_char(timestamp, 'HH24:MI') BETWEEN $2 AND $3`,
-          [currentDate, shiftTimings3.start.time, shiftTimings3.end.time]
-        );
-  
-        result.rows.forEach(row => {
-          row.timestamp = moment(row.timestamp).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');
-        });
-  
-        const productionTime = calculateProductionTime(result.rows);
-        const idleTime = calculateIdleTime(result.rows);
-        const offTime = calculateOffTime(result.rows);
-        const availability = calculateAvailability(result.rows);
-        const performance = calculatePerformance(result.rows);
-        const quality = calculateQuality(result.rows);
-        const oee = calculateOee(availability, performance, quality);
-  
-        return {
-          ProductionTime: productionTime,
-          IdleTime: idleTime,
-          OffTime: offTime,
-          Availability: availability,
-          Performance: performance,
-          Quality: quality,
-          OEE: oee,
-          CurrentDate: currentDate,
-          shiftStartTime: shiftTimings3.start.time,
-          shiftEndTime: shiftTimings3.end.time,
-          records: result.rows
-        };
-      } catch (error) {
-        console.error('Error fetching data:', error);
-        throw error;
-      }
-    };
-  
-    // Fetch and emit data every second
-    const interval = setInterval(async () => {
-      try {
-        const data = await fetchLiveData();
-        socket.emit('newData', data);
-      } catch (error) {
-        console.error('Error fetching and emitting data:', error);
-      }
-    }, 1000);
-  
-    socket.on('disconnect', () => {
-      clearInterval(interval);
-      console.log('Client disconnected');
-    });
-  });
+  console.log('Client connected to machine data');
 
+  // Function to fetch data and emit it to the client
+  const fetchLiveData = async () => {
+    try {
 
-  io.on('connection', (socket) => {
-    console.log('Client connected to shift data');
-  
-    // Function to fetch data and emit it to the client
-    const fetchLiveData = async () => {
-        try {
-            const now = new Date();
-            const nextDay = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-            const currentHour = now.getHours();
-        
-            // Define shift times
-            const shift1 = { start: 9, end: 17 }; // 9 AM to 5 PM
-            const shift2 = { start: 18, end: 2 }; // 6 PM to 2 AM (next day)
-        
-            let currentShift;
-            let shiftTimings;
-        
-            if (currentHour >= shift1.start && currentHour < shift1.end) {
-              currentShift = '1';
-              shiftTimings = {
-                start: {
-                  date: now.toLocaleDateString(),
-                  time: '09:00:00'
-                },
-                end: {
-                  date: now.toLocaleDateString(),
-                  time: '17:00:00'
+              const now = new Date();
+              const nextDay = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+              const currentHour2 = now.getHours();
+          
+              // Define shift times
+              const shift1 = { start: 9, end: 17 }; // 9 AM to 5 PM
+              const shift2 = { start: 18, end: 2 }; // 6 PM to 2 AM (next day)
+          
+              let currentShift;
+              let shiftTimings;
+          
+              if (currentHour2 >= shift1.start && currentHour2 < shift2.start) {
+                currentShift = '1';
+                shiftTimings = {
+                  start: {
+                    date: now.toLocaleDateString(),
+                    time: '09:00:00'
+                  },
+                  end: {
+                    date: now.toLocaleDateString(),
+                    time: '17:00:00'
+                  }
                 }
-              };
-            } else if ((currentHour >= shift2.start && currentHour <= 23) || (currentHour >= 0 && currentHour < shift2.end)) {
-              currentShift = '2';
-              shiftTimings = {
-                start: {
-                  date: now.toLocaleDateString(),
-                  time: '18:00:00'
-                },
-                end: {
-                  date: nextDay.toLocaleDateString(),
-                  time: '02:00:00'
-                }
-              };
-            }
-        
-            // Send response
-            return{
-              Shift: currentShift,
-              StartDate: shiftTimings.start.date,
-              StartTime: shiftTimings.start.time,
-              EndDate: shiftTimings.end.date, 
-              EndTime: shiftTimings.end.time
-            };
-          } catch (error) {
-            console.error('Error fetching machine status:', error);
-            res.status(500).json({ error: 'Internal server error' });
+              } else {
+                currentShift = '2';
+                shiftTimings = {
+                  start: {
+                    date: now.toLocaleDateString(),
+                    time: '18:00:00'
+                  },
+                  end: {
+                    date: nextDay.toLocaleDateString(),
+                    time: '02:00:00'
+                  }
+                };
+              }
+
+      let shiftTimings3;
+      const currentHour = new Date().getHours(); // Get the current hour (0-23)
+
+      if (currentHour >= 9 && currentHour < 18) {
+        shiftTimings3 = {
+          start: {
+            time: '08:59:00'
+          },
+          end: {
+            time: '17:01:00'
           }
-    };
-  
-    // Fetch and emit data every second
-    const interval = setInterval(async () => {
-      try {
-        const data = await fetchLiveData();
-        socket.emit('shiftData', data);
-      } catch (error) {
-        console.error('Error fetching and emitting data:', error);
+        };
+      } else {
+        shiftTimings3 = {
+          start: {
+            time: '17:59:00'
+          },
+          end: {
+            time: '02:01:00'
+          }
+        };
       }
-    }, 1000);
-  
-    socket.on('disconnect', () => {
-      clearInterval(interval);
-      console.log('Client disconnected');
-    });
+
+      const result = await pool.query(
+        `SELECT timestamp, machine_status, part_status 
+         FROM new.machine_signal_pool 
+         WHERE to_char(timestamp, 'YYYY-MM-DD') = $1 
+         AND to_char(timestamp, 'HH24:MI') BETWEEN $2 AND $3`,
+        [currentDate, shiftTimings3.start.time, shiftTimings3.end.time]
+      );
+
+      result.rows.forEach(row => {
+        row.timestamp = moment(row.timestamp).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');
+      });
+
+      const productionTime = calculateProductionTime(result.rows);
+      const idleTime = calculateIdleTime(result.rows);
+      const offTime = calculateOffTime(result.rows);
+      const availability = calculateAvailability(result.rows);
+      const performance = calculatePerformance(result.rows);
+      const quality = calculateQuality(result.rows);
+      const oee = calculateOee(availability, performance, quality);
+      const goodpart = calculateGoodPart(result.rows);
+      const actualProducedQuantity = calculateActualProducedQuantity(result.rows);
+      const badpart = actualProducedQuantity - goodpart;
+
+
+      return {
+        ProductionTime: productionTime,
+        IdleTime: idleTime,
+        OffTime: offTime,
+        Availability: availability,
+        Performance: performance,
+        Quality: quality,
+        OEE: oee,
+        PartCount : actualProducedQuantity,
+        GoodPart: goodpart,
+        BadPart : badpart,
+        Shift: currentShift,
+        StartDate: shiftTimings.start.date,
+        StartTime: shiftTimings.start.time,
+        EndDate: shiftTimings.end.date, 
+        EndTime: shiftTimings.end.time
+
+      };
+    } catch (error) {
+      console.error('Error fetching data:', error);
+      throw error;
+    }
+  };
+
+  const interval = setInterval(async () => {
+    try {
+      const data = await fetchLiveData();
+      socket.emit('newData', data);
+    } catch (error) {
+      console.error('Error fetching and emitting data:', error);
+    }
+  }, 3000);
+
+  socket.on('disconnect', () => {
+    clearInterval(interval);
+    console.log('Client disconnected');
   });
+});
 
 
+  // io.on('connection', (socket) => {
+  //   console.log('Client connected to shift data');
   
+  //   // Function to fetch data and emit it to the client
+  //   const fetchLiveData = async () => {
+  //       try {
+  //           const now = new Date();
+  //           const nextDay = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  //           const currentHour = now.getHours();
+        
+  //           // Define shift times
+  //           const shift1 = { start: 9, end: 17 }; // 9 AM to 5 PM
+  //           const shift2 = { start: 18, end: 2 }; // 6 PM to 2 AM (next day)
+        
+  //           let currentShift;
+  //           let shiftTimings;
+        
+  //           if (currentHour >= shift1.start && currentHour < shift1.end) {
+  //             currentShift = '1';
+  //             shiftTimings = {
+  //               start: {
+  //                 date: now.toLocaleDateString(),
+  //                 time: '09:00:00'
+  //               },
+  //               end: {
+  //                 date: now.toLocaleDateString(),
+  //                 time: '17:00:00'
+  //               }
+  //             };
+  //           } else if ((currentHour >= shift2.start && currentHour <= 23) || (currentHour >= 0 && currentHour < shift2.end)) {
+  //             currentShift = '2';
+  //             shiftTimings = {
+  //               start: {
+  //                 date: now.toLocaleDateString(),
+  //                 time: '18:00:00'
+  //               },
+  //               end: {
+  //                 date: nextDay.toLocaleDateString(),
+  //                 time: '02:00:00'
+  //               }
+  //             };
+  //           }
+        
+  //           // Send response
+  //           return{
+  //             Shift: currentShift,
+  //             StartDate: shiftTimings.start.date,
+  //             StartTime: shiftTimings.start.time,
+  //             EndDate: shiftTimings.end.date, 
+  //             EndTime: shiftTimings.end.time
+  //           };
+  //         } catch (error) {
+  //           console.error('Error fetching machine status:', error);
+  //           res.status(500).json({ error: 'Internal server error' });
+  //         }
+  //   };
   
+  //   // Fetch and emit data every second
+  //   const interval = setInterval(async () => {
+  //     try {
+  //       const data = await fetchLiveData();
+  //       socket.emit('shiftData', data);
+  //     } catch (error) {
+  //       console.error('Error fetching and emitting data:', error);
+  //     }
+  //   }, 1000);
+  
+  //   socket.on('disconnect', () => {
+  //     clearInterval(interval);
+  //     console.log('Client disconnected');
+  //   });
+  // });
+
 
   server.listen(5000, () => {
     console.log('Server running on port 5000');
