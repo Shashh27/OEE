@@ -165,7 +165,7 @@ export default function Home(){
                 }}>
                <SyncOutlined style={{ fontSize: '20px', color: '#66BB6A', marginRight: '8px' }} />
                <b>Machine State :</b>
-               <span style={{ color: '#66BB6A', fontSize: '25px', fontWeight: 'bold' }}> RUN </span>
+               <span style={{ fontSize: '25px', fontWeight: 'bold' }}> {shiftData.MachineState} </span>
             </div>
 
             <div className="border-2 border-white rounded-lg w-[310px] h-[180px] bg-[#00b4d8] ml-3 flex flex-col items-center ">

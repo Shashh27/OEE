@@ -1,6 +1,6 @@
 import { Card, Avatar } from 'antd';
 import '../App.css'
-import logo from '../assets/cmti.png'
+import logo from '../assets/cmti_logo.jpg'
 import mono from '../assets/mono.jpg'
 import mcv from '../assets/mcv.webp'
 import { useNavigate } from 'react-router-dom';
@@ -22,7 +22,7 @@ function MainPage() {
     <>
    <div className="flex justify-between items-start p-5 ">
      <h1 className="text-4xl font-bold text-black mt-3 ml-5">Machine OEE Monitoring</h1>
-     <img className="mr-4" src={logo} alt="Machine OEE Logo" style={{width:'250px' , height:'50px'}} />
+     <img className="mr-4" src={logo} alt="Machine OEE Logo" style={{width:'160px' , height:'50px'}} />
    </div>
     <hr/>
     <div className="p-5 flex ml-10 mt-7">

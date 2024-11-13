@@ -200,8 +200,8 @@ export default function Shiftwise(){
             </div>
             </div>
             </div>
-         <div style={{width:'1585px' , height:'200px' , border:'1px solid white' , marginLeft:'50px' , backgroundColor:'white' , borderRadius:'10px' , marginTop:'20px'}}>
-             <MachineStateTimelineChart data={dummyData} />
+         <div style={{width:'1585px' , height:'200px' , border:'1px solid white' , marginLeft:'50px' , backgroundColor:'white' , borderRadius:'10px' , marginTop:'20px' , overflowX: 'auto', whiteSpace: 'nowrap'}}>
+             <MachineStateTimelineChart data={data.MachineState} />
           </div>
           <div className="flex">
                    <div style={{marginLeft:'30px' , marginTop:'20px'}}>
