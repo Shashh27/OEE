@@ -236,7 +236,7 @@ app.get('/oee', async (req, res) => {
 app.get('/machineState' , async(req, res)=>{
 
     try {
-        const result = await pool.query(
+        const result2 = await pool.query(
             `SELECT machine_status 
              FROM new.machine_signal_pool
              WHERE to_char(timestamp, 'YYYY-MM-DD') = $1 
@@ -245,12 +245,12 @@ app.get('/machineState' , async(req, res)=>{
             [currentDate]
         );
 
-        if (result.rows.length > 0) {
+        if (result2.rows.length > 0) {
             res.json({
-                machine_state: result.rows[0].machine_status
+                machine_state: result2.rows[0].machine_status
             });
         } else {
-            res.status(404).json({ message: 'No machine status found for today' });
+            res.status(404).json({ message: 'Null' });
         }
 
     } catch (error) {
@@ -508,6 +508,29 @@ const calculateOee = (availability , performance , quality) =>{
 }
 
 
+const calculateMachineSate = (records) =>{
+    
+   let result = []
+
+   for (let i =0 ; i< records.length ; i++){
+        const currentRow = records[i];
+        const nextRow = records[i+1];
+
+        const startTime = currentRow.timestamp.split(' ')[1]; // Extract only time
+        const endTime = nextRow ? nextRow.timestamp.split(' ')[1] : startTime; // Extract only time
+        const state = currentRow.machine_status;
+
+        result.push({
+          startTime,
+          endTime,
+          state,
+        });
+   }
+   return result;
+}
+  
+
+
 app.get('/shiftwise', async (req,res)=>{
     try{
         
@@ -548,6 +571,7 @@ app.get('/shiftwise', async (req,res)=>{
           row.timestamp = moment(row.timestamp).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');
          });
 
+        const machineState = calculateMachineSate(result.rows);
         const productionTime = calculateProductionTime(result.rows);
         const idleTime = calculateIdleTime(result.rows);
         const offTime = calculateOffTime(result.rows);
@@ -560,6 +584,7 @@ app.get('/shiftwise', async (req,res)=>{
         const badpart = actualProducedQuantity - goodpart;
 
         res.json({
+            MachineState : machineState,
             ProductionTime : productionTime,
             IdleTime : idleTime,
             OffTime : offTime,
@@ -688,6 +713,79 @@ app.get('/analytics' ,async (req, res)=>{
 });
 
 
+app.get('/report', async (req, res)=>{
+      try {
+         
+        const {startDate , endDate} = req.query;
+        
+        if(!startDate || !endDate){
+            return res.status(400).send('Date is required');
+        }
+
+        const inputStartDate = new Date(startDate);
+        if (isNaN(inputStartDate)) {
+            return res.status(400).send('Invalid date format. Please use YYYY-MM-DD.');
+        }
+
+        const inputEndDate = new Date(endDate);
+        if (isNaN(inputEndDate)) {
+            return res.status(400).send('Invalid date format. Please use YYYY-MM-DD.');
+        }
+
+        const formattedStartDate = inputStartDate.toISOString().split('T')[0]; // Format as YYYY-MM-DD
+        const formattedEndDate = inputEndDate.toISOString().split('T')[0];
+
+        const result= await pool.query(`select timestamp, machine_status , part_status from new.machine_signal_pool  WHERE to_char(timestamp, 'YYYY-MM-DD') BETWEEN $1 AND $2`,[formattedStartDate, formattedEndDate]);
+        
+        const dataByDate = {};
+
+        result.rows.forEach(row => {
+            const formattedTimestamp = moment(row.timestamp).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');
+            const dateOnly = formattedTimestamp.split(' ')[0]; // Extract the date portion
+
+            row.timestamp = formattedTimestamp; // Update the timestamp
+
+            if (!dataByDate[dateOnly]) {
+                dataByDate[dateOnly] = [];
+            }
+            dataByDate[dateOnly].push(row);
+        });
+
+        const reportByDate = {};
+
+        for (const date in dataByDate) {
+            if (dataByDate.hasOwnProperty(date)) {
+                const records = dataByDate[date];
+                reportByDate[date] = {
+                  productionTimeByDate: calculateProductionTime(records),
+                  idleTimeByDate: calculateIdleTimeAnalytics(records),
+                  offTimeByDate: calculateOffTimeByDate(records),
+                  availabilityByDate: calculateAvailability(records),
+                  performanceByDate: calculatePerformance(records),
+                  qualityByDate: calculateQuality(records),
+                  oeeByDate: calculateOee(
+                      calculateAvailability(records),
+                      calculatePerformance(records),
+                      calculateQuality(records)
+                  ),
+                  goodpartByDate: calculateGoodPart(records),
+                  actualProducedQuantityByDate: calculateActualProducedQuantity(records),
+                  badpart: calculateActualProducedQuantity(records) - calculateGoodPart(records)
+              };
+            }
+
+        }
+
+        res.json(reportByDate);
+           
+
+      } catch (error) {
+        console.error('Error fetching report:', error);
+        res.status(500).send('An error occurred while fetching the report');
+      }
+});
+  
+
 app.get('/livedata', async (req,res)=>{
     try{
        let shiftTimings3;
@@ -751,7 +849,6 @@ app.get('/livedata', async (req,res)=>{
         res.status(500).send('Server error');  
       }
 });
-  
 
 
 io.on('connection', (socket) => {
@@ -760,6 +857,24 @@ io.on('connection', (socket) => {
   // Function to fetch data and emit it to the client
   const fetchLiveData = async () => {
     try {
+
+              let machineState ='';
+
+              const result2 = await pool.query(
+                `SELECT machine_status 
+                 FROM new.machine_signal_pool
+                 WHERE to_char(timestamp, 'YYYY-MM-DD') = $1 
+                 ORDER BY timestamp DESC 
+                 LIMIT 1`,
+                [currentDate]
+            );
+    
+            if (result2.rows.length > 0) {
+                    machineState = result2.rows[0].machine_status;
+            } else {
+                machineState = 'Null';
+            }
+
 
               const now = new Date();
               const nextDay = new Date(now.getTime() + 24 * 60 * 60 * 1000);
@@ -860,7 +975,8 @@ io.on('connection', (socket) => {
         StartDate: shiftTimings.start.date,
         StartTime: shiftTimings.start.time,
         EndDate: shiftTimings.end.date, 
-        EndTime: shiftTimings.end.time
+        EndTime: shiftTimings.end.time,
+        MachineState: machineState
 
       };
     } catch (error) {
