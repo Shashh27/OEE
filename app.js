@@ -22,8 +22,38 @@ app.use(cors({ origin: '*' }));
 
 const moment = require('moment-timezone');
 
+let shift_duration;
+let planned_non_production;
+let planned_downtime;
+let planned_production;
+let available_idle_time;
 
-const planned_production = 440;
+app.get('/getGeneralConfig', async(req, res)=>{
+  try {
+      const result = await pool.query('select shift_duration, planned_non_production , planned_downtime from new.config_info');
+      res.json(result.rows);
+      shift_duration = result.rows[0].shift_duration;
+      planned_non_production = result.rows[0].planned_non_production;
+      planned_downtime = result.rows[0].planned_downtime;
+
+      planned_production = shift_duration - (planned_non_production+planned_downtime);
+      available_idle_time = planned_non_production + planned_downtime;
+
+  } catch (error) {
+      console.log(error);
+  }
+});
+
+
+app.get('/getShiftConfig', async(req, res)=>{
+  try {
+      const result = await pool.query('select * from new.shift_info');
+      res.json(result.rows);
+  } catch (error) {
+      console.log(error);
+  }
+})
+
 
 function calculateActualProductionTime(records) {
     let totalMinutes = 0;
@@ -60,7 +90,7 @@ function calculateActualProductionTime(records) {
   const calculateActualProducedQuantity = (records) =>{
       let quantity = 0;
 
-      for(let i=0; i< records.length ; i++){
+      for(let i=0; i< records.length - 1 ; i++){
         if(records[i].machine_status === "PRODUCTION"){
             quantity++;
           }
@@ -73,7 +103,7 @@ function calculateActualProductionTime(records) {
     let count = 0; // To ensure we only consider the first 5 production cycles
 
     for (let i = 0; i < records.length; i++) {
-        if (count >= 10) break; // Limit to first 5 'PRODUCTION' intervals
+        if (count >= 15) break; // Limit to first 5 'PRODUCTION' intervals
 
         if (records[i].machine_status === 'PRODUCTION') {
             const start = new Date(records[i].timestamp);
@@ -101,7 +131,7 @@ function calculateActualProductionTime(records) {
     }
 
     // Calculate the average ideal cycle time for the first 5 cycles
-    return count === 10 ? idealCycleTime / 10 : 0;
+    return  idealCycleTime / count ;
 }
 
 const calculateGoodPart = (records) =>{
@@ -298,7 +328,7 @@ const calculateIdleTime = (records) =>{
 
             let end;
             for (let j = i + 1; j < records.length; j++) {
-                if (records[j].machine_status === 'PRODUCTION' || records[j].machine_status === 'OFF') {
+                if (records[j].machine_status === 'PRODUCTION' || records[j].machine_status === 'OFF' || records[j].machine_status === 'IDLE') {
                     end = new Date(records[j].timestamp);
                     break;
                 }
@@ -477,11 +507,16 @@ const calculateOffTimeByDate = (records) => {
 
 
 const calculateAvailability = (records) =>{
+    const idealCycleTime = calculateIdealCycleTime(records);
     const actualProduction = calculateProductionTime(records);
 
-    const availability = ((actualProduction / planned_production ) * 100).toFixed(2);
-
-    return availability;
+    if((available_idle_time - idealCycleTime) > 0){
+       return 100.00;
+    } 
+    else{
+      const availability = ((actualProduction / planned_production ) * 100).toFixed(2);
+      return availability;
+    }
 }
 
 const calculatePerformance = (records) =>{
@@ -534,9 +569,9 @@ const calculateMachineSate = (records) =>{
 app.get('/shiftwise', async (req,res)=>{
     try{
         
-        const {date , shift} = req.query;
+        const {id , date , shift ,} = req.query;
         
-        if(!date || !shift){
+        if(!id || !date || !shift){
             return res.status(400).send('Date and shift are required');
         }
         
@@ -565,7 +600,7 @@ app.get('/shiftwise', async (req,res)=>{
             }
         }
 
-        const result= await pool.query(`select timestamp, machine_status , part_status from new.machine_signal_pool WHERE to_char(timestamp, 'YYYY-MM-DD') = $1  AND to_char(timestamp, 'HH24:MI') BETWEEN $2 AND $3`, [date, shiftTimings2.start.time, shiftTimings2.end.time]);
+        const result= await pool.query(`select timestamp, machine_status , part_status from new.machine_signal_pool WHERE machine_id = $1 AND to_char(timestamp, 'YYYY-MM-DD') = $2  AND to_char(timestamp, 'HH24:MI') BETWEEN $3 AND $4 ORDER BY timestamp ASC`, [id ,date, shiftTimings2.start.time, shiftTimings2.end.time]);
     
         result.rows.forEach(row => {
           row.timestamp = moment(row.timestamp).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');
@@ -582,12 +617,14 @@ app.get('/shiftwise', async (req,res)=>{
         const goodpart = calculateGoodPart(result.rows);
         const actualProducedQuantity = calculateActualProducedQuantity(result.rows);
         const badpart = actualProducedQuantity - goodpart;
+        const idealCycleTime = calculateIdealCycleTime(result.rows);
+        const performancedummy = ((actualProducedQuantity * idealCycleTime) / productionTime) * 100
 
         res.json({
             MachineState : machineState,
-            ProductionTime : productionTime,
-            IdleTime : idleTime,
-            OffTime : offTime,
+            ProductionTime : Math.round(productionTime),
+            IdleTime : Math.round(idleTime),
+            OffTime : Math.round(offTime),
             Availability : availability,
             Performance : performance,
             Quality: quality,
@@ -596,6 +633,8 @@ app.get('/shiftwise', async (req,res)=>{
             GoodPart: goodpart,
             BadPart : badpart, 
             Result: result.rows,
+            IdealCycleTime: idealCycleTime,
+            performancedummy: performancedummy,
         })
     }
     catch(error){
@@ -655,9 +694,9 @@ app.get('/weekwise' , async (req,res)=>{
 
 app.get('/analytics' ,async (req, res)=>{
     try {
-        const {startDate , endDate} = req.query;
+        const {id ,startDate , endDate} = req.query;
         
-        if(!startDate || !endDate){
+        if(!id || !startDate || !endDate){
             return res.status(400).send('Date is required');
         }
 
@@ -674,7 +713,7 @@ app.get('/analytics' ,async (req, res)=>{
         const formattedStartDate = inputStartDate.toISOString().split('T')[0]; // Format as YYYY-MM-DD
         const formattedEndDate = inputEndDate.toISOString().split('T')[0];
 
-        const result= await pool.query(`select timestamp, machine_status , part_status from new.machine_signal_pool  WHERE to_char(timestamp, 'YYYY-MM-DD') BETWEEN $1 AND $2`,[formattedStartDate, formattedEndDate]);
+        const result= await pool.query(`select timestamp, machine_status , part_status from new.machine_signal_pool WHERE machine_id = $1 AND to_char(timestamp, 'YYYY-MM-DD') BETWEEN $2 AND $3 ORDER BY timestamp ASC`,[id , formattedStartDate, formattedEndDate]);
         
         result.rows.forEach(row => {
           row.timestamp = moment(row.timestamp).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');
@@ -693,9 +732,9 @@ app.get('/analytics' ,async (req, res)=>{
     
 
         res.json({
-            ProductionTime : productionTime,
-            IdleTime : idleTime,
-            OffTime : offTime,
+            ProductionTime : Math.round(productionTime),
+            IdleTime : Math.round(idleTime),
+            OffTime : Math.round(offTime),
             Availability : availability,
             Performance : performance,
             Quality: quality,
@@ -716,9 +755,9 @@ app.get('/analytics' ,async (req, res)=>{
 app.get('/report', async (req, res)=>{
       try {
          
-        const {startDate , endDate} = req.query;
+        const {id , startDate , endDate} = req.query;
         
-        if(!startDate || !endDate){
+        if(!id || !startDate || !endDate){
             return res.status(400).send('Date is required');
         }
 
@@ -735,7 +774,7 @@ app.get('/report', async (req, res)=>{
         const formattedStartDate = inputStartDate.toISOString().split('T')[0]; // Format as YYYY-MM-DD
         const formattedEndDate = inputEndDate.toISOString().split('T')[0];
 
-        const result= await pool.query(`select timestamp, machine_status , part_status from new.machine_signal_pool  WHERE to_char(timestamp, 'YYYY-MM-DD') BETWEEN $1 AND $2`,[formattedStartDate, formattedEndDate]);
+        const result= await pool.query(`select timestamp, machine_status , part_status from new.machine_signal_pool WHERE machine_id = $1 AND to_char(timestamp, 'YYYY-MM-DD') BETWEEN $2 AND $3 ORDER BY timestamp ASC`,[id ,formattedStartDate, formattedEndDate]);
         
         const dataByDate = {};
 
@@ -757,9 +796,9 @@ app.get('/report', async (req, res)=>{
             if (dataByDate.hasOwnProperty(date)) {
                 const records = dataByDate[date];
                 reportByDate[date] = {
-                  productionTimeByDate: calculateProductionTime(records),
-                  idleTimeByDate: calculateIdleTimeAnalytics(records),
-                  offTimeByDate: calculateOffTimeByDate(records),
+                  productionTimeByDate:  Math.round(calculateProductionTime(records)),
+                  idleTimeByDate: Math.round(calculateIdleTimeAnalytics(records)),
+                  offTimeByDate: Math.round(calculateOffTimeByDate(records)),
                   availabilityByDate: calculateAvailability(records),
                   performanceByDate: calculatePerformance(records),
                   qualityByDate: calculateQuality(records),
@@ -852,21 +891,45 @@ app.get('/livedata', async (req,res)=>{
 
 
 io.on('connection', (socket) => {
+
+  const id = socket.handshake.query.id; // Access the id from the query parameters
+
   console.log('Client connected to machine data');
 
   // Function to fetch data and emit it to the client
   const fetchLiveData = async () => {
     try {
+      let shiftTimings4;
+      const currentHour4 = new Date().getHours(); // Get the current hour (0-23)
 
+      if (currentHour4 >= 9 && currentHour4 < 18) {
+        shiftTimings4 = {
+          start: {
+            time: '08:59:00'
+          },
+          end: {
+            time: '17:01:00'
+          }
+        };
+      } else {
+        shiftTimings4 = {
+          start: {
+            time: '17:59:00'
+          },
+          end: {
+            time: '02:01:00'
+          }
+        };
+      }
               let machineState ='';
-
               const result2 = await pool.query(
                 `SELECT machine_status 
                  FROM new.machine_signal_pool
-                 WHERE to_char(timestamp, 'YYYY-MM-DD') = $1 
+                 WHERE machine_id = $1 AND to_char(timestamp, 'YYYY-MM-DD') = $2
+                 AND to_char(timestamp, 'HH24:MI') BETWEEN $3 AND $4
                  ORDER BY timestamp DESC 
                  LIMIT 1`,
-                [currentDate]
+                [id , currentDate , shiftTimings4.start.time , shiftTimings4.end.time]
             );
     
             if (result2.rows.length > 0) {
@@ -939,9 +1002,9 @@ io.on('connection', (socket) => {
       const result = await pool.query(
         `SELECT timestamp, machine_status, part_status 
          FROM new.machine_signal_pool 
-         WHERE to_char(timestamp, 'YYYY-MM-DD') = $1 
-         AND to_char(timestamp, 'HH24:MI') BETWEEN $2 AND $3`,
-        [currentDate, shiftTimings3.start.time, shiftTimings3.end.time]
+         WHERE machine_id = $1 AND to_char(timestamp, 'YYYY-MM-DD') = $2
+         AND to_char(timestamp, 'HH24:MI') BETWEEN $3 AND $4 ORDER BY timestamp ASC`,
+        [id , currentDate, shiftTimings3.start.time, shiftTimings3.end.time]
       );
 
       result.rows.forEach(row => {
@@ -961,9 +1024,9 @@ io.on('connection', (socket) => {
 
 
       return {
-        ProductionTime: productionTime,
-        IdleTime: idleTime,
-        OffTime: offTime,
+        ProductionTime: Math.round(productionTime),
+        IdleTime: Math.round(idleTime),
+        OffTime: Math.round(offTime),
         Availability: availability,
         Performance: performance,
         Quality: quality,
@@ -1000,80 +1063,98 @@ io.on('connection', (socket) => {
   });
 });
 
+  app.get('/machineDetails' , async(req , res)=>{
+    try {
+       
+      const result = await pool.query('select id , machine_name from new.machine_config');
 
-  // io.on('connection', (socket) => {
-  //   console.log('Client connected to shift data');
-  
-  //   // Function to fetch data and emit it to the client
-  //   const fetchLiveData = async () => {
-  //       try {
-  //           const now = new Date();
-  //           const nextDay = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  //           const currentHour = now.getHours();
-        
-  //           // Define shift times
-  //           const shift1 = { start: 9, end: 17 }; // 9 AM to 5 PM
-  //           const shift2 = { start: 18, end: 2 }; // 6 PM to 2 AM (next day)
-        
-  //           let currentShift;
-  //           let shiftTimings;
-        
-  //           if (currentHour >= shift1.start && currentHour < shift1.end) {
-  //             currentShift = '1';
-  //             shiftTimings = {
-  //               start: {
-  //                 date: now.toLocaleDateString(),
-  //                 time: '09:00:00'
-  //               },
-  //               end: {
-  //                 date: now.toLocaleDateString(),
-  //                 time: '17:00:00'
-  //               }
-  //             };
-  //           } else if ((currentHour >= shift2.start && currentHour <= 23) || (currentHour >= 0 && currentHour < shift2.end)) {
-  //             currentShift = '2';
-  //             shiftTimings = {
-  //               start: {
-  //                 date: now.toLocaleDateString(),
-  //                 time: '18:00:00'
-  //               },
-  //               end: {
-  //                 date: nextDay.toLocaleDateString(),
-  //                 time: '02:00:00'
-  //               }
-  //             };
-  //           }
-        
-  //           // Send response
-  //           return{
-  //             Shift: currentShift,
-  //             StartDate: shiftTimings.start.date,
-  //             StartTime: shiftTimings.start.time,
-  //             EndDate: shiftTimings.end.date, 
-  //             EndTime: shiftTimings.end.time
-  //           };
-  //         } catch (error) {
-  //           console.error('Error fetching machine status:', error);
-  //           res.status(500).json({ error: 'Internal server error' });
-  //         }
-  //   };
-  
-  //   // Fetch and emit data every second
-  //   const interval = setInterval(async () => {
-  //     try {
-  //       const data = await fetchLiveData();
-  //       socket.emit('shiftData', data);
-  //     } catch (error) {
-  //       console.error('Error fetching and emitting data:', error);
-  //     }
-  //   }, 1000);
-  
-  //   socket.on('disconnect', () => {
-  //     clearInterval(interval);
-  //     console.log('Client disconnected');
-  //   });
-  // });
+      res.json(result.rows);
 
+    } catch (error) {
+       console.log(error);
+    }
+  })
+
+  app.get('/history' , async (req, res)=>{
+       try {
+        const {id} = req.query;
+        const result = await pool.query(`select * from new.machine_signal_pool where machine_id= $1`, [id]);
+        
+        result.rows.forEach(row => {
+          row.timestamp = moment(row.timestamp).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');
+        });
+  
+        const productionTime = calculateProductionTime(result.rows);
+        const idleTime = calculateIdleTime(result.rows);
+        const offTime = calculateOffTime(result.rows);
+        const availability = calculateAvailability(result.rows);
+        const performance = calculatePerformance(result.rows);
+        const quality = calculateQuality(result.rows);
+        const oee = calculateOee(availability, performance, quality);
+        const goodpart = calculateGoodPart(result.rows);
+        const actualProducedQuantity = calculateActualProducedQuantity(result.rows);
+        const badpart = actualProducedQuantity - goodpart;
+  
+  
+        res.json( {
+          ProductionTime: productionTime,
+          IdleTime: idleTime,
+          OffTime: offTime,
+          Availability: availability,
+          Performance: performance,
+          Quality: quality,
+          OEE: oee,
+          PartCount : actualProducedQuantity,
+          GoodPart: goodpart,
+          BadPart : badpart,
+          result: result.rows
+        });
+       } catch (error) {
+           console.log(error);
+       }
+       
+  })
+
+  app.post('/insertGeneralConfig', async (req, res) => {
+    try {
+        const { shiftDuration, plannedNonProduction, plannedDowntime } = req.body;
+
+        const checkResult = await pool.query(`SELECT COUNT(*) AS row_count FROM new.config_info`);
+
+        if (parseInt(checkResult.rows[0].row_count) === 0) {
+        const result = await pool.query(
+            `INSERT INTO new.config_info (shift_duration, planned_non_production, planned_downtime) 
+            VALUES ($1, $2, $3)`, 
+            [shiftDuration, plannedNonProduction, plannedDowntime]
+        );
+        res.json({ message: 'Data inserted successfully', result });
+        }
+        else {
+          res.status(400).json({ message: 'Data already exists. Only one row is allowed in this table.' });
+      }
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Error inserting data', error });
+    }
+}); 
+
+app.post('/insertShiftInfo' , async(req, res)=>{
+   try {
+     const {startTime , endTime} = req.body;
+     const checkResult = await pool.query(`SELECT COUNT(*) AS row_count FROM new.shift_info`);
+
+     if (parseInt(checkResult.rows[0].row_count) < 3) {
+     const result = await pool.query(`insert into new.shift_info (start_time , end_time) values ($1 , $2)`, [startTime , endTime]);
+     res.json({ message: 'Data inserted successfully', result });
+     }
+     else {
+      res.status(400).json({ message: 'Data already exists. Only three row is allowed in this table.' });
+  }
+   } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error inserting data', error });
+   }
+});
 
   server.listen(5000, () => {
     console.log('Server running on port 5000');
