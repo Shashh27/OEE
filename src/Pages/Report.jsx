@@ -13,6 +13,7 @@ import {
 } from 'antd';
 import { DownloadOutlined } from '@ant-design/icons';
 import axios from 'axios';
+import { useParams } from "react-router-dom";
 
 
 export default function Report(){
@@ -21,6 +22,7 @@ export default function Report(){
     const [endDate, setEndDate] = useState(null);
     const [reportData, setReportData] = useState([]);
     const [loading, setLoading] = useState(false);
+    const {machineId} = useParams();
     // Add pagination state
     const [pagination, setPagination] = useState({
         current: 1,
@@ -133,8 +135,9 @@ const fetchReportData = async () => {
 
     setLoading(true);
     try {
-        const response = await axios.get('http://192.168.137.190:3000/report', {
+        const response = await axios.get('http://192.168.137.161:3000/report', {
             params: {
+                id: machineId,
                 startDate: startDate.format('YYYY-MM-DD'),
                 endDate: endDate.format('YYYY-MM-DD')
             }

@@ -33,7 +33,7 @@ export default function Dashboard() {
                         <Menu.Item key="analytics" onClick={()=>{navigate(`/${machineId}/analytics`)}} icon={<ScheduleOutlined />}>Analytics</Menu.Item>
                         <Menu.Item key="report" onClick={()=>{navigate(`/${machineId}/report`)}} icon={<FileTextOutlined />}>Report</Menu.Item>
                         <Menu.Item style={{ pointerEvents: 'none' }}>
-                        <img src={logo} alt="Logo" style={{ height: '30px', width:'100px', marginLeft: '1000px', marginTop: '15px', outline: 'none', border: 'none' }} />
+                        <img src={logo} alt="Logo" style={{ height: '35px', width:'100px', marginLeft: '850px', marginTop: '15px', outline: 'none', border: 'none' }} />
                     </Menu.Item>
                     </Menu>
 
