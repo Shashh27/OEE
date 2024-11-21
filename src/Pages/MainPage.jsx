@@ -125,104 +125,271 @@ function MainPage() {
     };
 
     const handleSubmitClick = async()=>{
-          try {
-
-            if (!shiftDuration || !plannedNonProduction || !plannedDowntime) {
-              message.error('Please fill in all time fields');
-              return;
-            }
-
-              const response = await axios.post(
-              'http://192.168.137.83:3000/insertGeneralConfig',
-              {
-                  shiftDuration: shiftDuration,
-                  plannedNonProduction: plannedNonProduction,
-                  plannedDowntime: plannedDowntime,
+      try {
+        // Validate input fields
+        if (!shiftDuration || !plannedNonProduction || !plannedDowntime) {
+          message.error('Please fill in all time fields');
+          return;
+        }
+    
+        // Check if the record already exists
+        const checkResponse = await axios.get('http://192.168.137.161:3000/getGeneralConfig', {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+    
+        const configExists = checkResponse.data && checkResponse.data.length > 0;
+    
+        if (configExists) {
+          // Perform PUT request to update existing configuration
+          const response = await axios.put(
+            'http://192.168.137.161:3000/editGeneralConfig',
+            {
+              shiftDuration: shiftDuration,
+              plannedNonProduction: plannedNonProduction,
+              plannedDowntime: plannedDowntime,
+            },
+            {
+              headers: {
+                'Content-Type': 'application/json',
               },
-              {
-                  headers: {
-                      'Content-Type': 'application/json',
-                  },
-              }
+            }
           );
-          console.log('Response:' , response.data);
-          message.success('Data saved successfully');
-          } catch (error) {
-            console.error('Error:', error.response ? error.response.data : error.message);
-          }
-    }
-
+    
+          console.log('Update Response:', response.data);
+          message.success('Configuration updated successfully');
+        } else {
+          // Perform POST request to insert new configuration
+          const response = await axios.post(
+            'http://192.168.137.161:3000/insertGeneralConfig',
+            {
+              shiftDuration: shiftDuration,
+              plannedNonProduction: plannedNonProduction,
+              plannedDowntime: plannedDowntime,
+            },
+            {
+              headers: {
+                'Content-Type': 'application/json',
+              },
+            }
+          );
+    
+          console.log('Insert Response:', response.data);
+          message.success('Configuration saved successfully');
+        }
+      } catch (error) {
+        console.error('Error:', error.response ? error.response.data : error.message);
+        message.error('An error occurred while saving the configuration');
+      }
+    };
 
     const handleSave1Click = async () => {
       console.log('shift1:' ,shift1Start , shift1End);
-
       try {
+        // Validate input fields
+        if (!shift1Start || !shift1End) {
+          message.error('Please fill in both start and end times');
+          return;
+        }
+
+        const formatTime = (time) => {
+          const date = new Date(time); // Assuming `time` is a valid date/time string
+          const hours = date.getHours().toString().padStart(2, '0');
+          const minutes = date.getMinutes().toString().padStart(2, '0');
+          const seconds = date.getSeconds().toString().padStart(2, '0');
+          return `${hours}:${minutes}:${seconds}`;
+        };
+    
+        // Check if the record for Shift 1 already exists
+        const checkResponse = await axios.get('http://192.168.137.161:3000/getShiftConfig', {
+          headers: { 'Content-Type': 'application/json' },
+        });
+    
+        // Assuming the response returns an array of shifts and we look for id = 1
+        const shiftExists = checkResponse.data.some((shift) => shift.id === 1);
+    
+        if (shiftExists) {
+          // Perform PUT request to update existing shift info
+          const response = await axios.put(
+            'http://192.168.137.161:3000/editShiftConfig',
+            {
+              id: 1,
+              startTime: formatTime(shift1Start),
+              endTime: formatTime(shift1End),
+            },
+            {
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
+    
+          console.log('Update Response:', response.data);
+          message.success('Shift 1 times updated successfully');
+        } else {
+          // Perform POST request to insert new shift info
           const response = await axios.post(
-              'http://192.168.137.83:3000/insertShiftInfo',
-              {
-                startTime: shift1Start,
-                endTime: shift1End,
-              },
-              {
-                headers: { 'Content-Type': 'application/json' }
-              }
-            );
-          console.log('Response:' , response.data);
+            'http://192.168.137.161:3000/insertShiftInfo',
+            {
+              startTime: formatTime(shift1Start),
+              endTime: formatTime(shift1End),
+            },
+            {
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
+    
+          console.log('Insert Response:', response.data);
           message.success('Shift 1 times saved successfully');
+        }
       } catch (error) {
-          console.error('Error:', error.response ? error.response.data : error.message);
+        console.error('Error:', error.response ? error.response.data : error.message);
+        message.error('An error occurred while saving shift times');
       }
-  };
+    };
 
   const handleSave2Click = async () => {
     console.log('shift2:',shift2Start , shift2End);
     try {
-        const promises = await axios.post('http://192.168.137.83:3000/insertShiftInfo',
-            {
-              startTime: shift2Start,
-              endTime: shift2End,
-            },
-            {
-              headers: { 'Content-Type': 'application/json' }
-            }
-          );
-        console.log('Response:' , promises.data);
+      // Validate input fields
+      if (!shift2Start || !shift2End) {
+        message.error('Please fill in both start and end times');
+        return;
+      }
+
+      const formatTime = (time) => {
+        const date = new Date(time); // Assuming `time` is a valid date/time string
+        const hours = date.getHours().toString().padStart(2, '0');
+        const minutes = date.getMinutes().toString().padStart(2, '0');
+        const seconds = date.getSeconds().toString().padStart(2, '0');
+        return `${hours}:${minutes}:${seconds}`;
+      };
+  
+      // Check if the record for Shift 1 already exists
+      const checkResponse = await axios.get('http://192.168.137.161:3000/getShiftConfig', {
+        headers: { 'Content-Type': 'application/json' },
+      });
+  
+      // Assuming the response returns an array of shifts and we look for id = 1
+      const shiftExists = checkResponse.data.some((shift) => shift.id === 2);
+  
+      if (shiftExists) {
+        // Perform PUT request to update existing shift info
+        const response = await axios.put(
+          'http://192.168.137.161:3000/editShiftConfig',
+          {
+            id: 2,
+            startTime: formatTime(shift2Start),
+            endTime: formatTime(shift2End),
+          },
+          {
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+  
+        console.log('Update Response:', response.data);
+        message.success('Shift 2 times updated successfully');
+      } else {
+        // Perform POST request to insert new shift info
+        const response = await axios.post(
+          'http://192.168.137.161:3000/insertShiftInfo',
+          {
+            startTime: formatTime(shift2Start),
+            endTime: formatTime(shift2End),
+          },
+          {
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+  
+        console.log('Insert Response:', response.data);
         message.success('Shift 2 times saved successfully');
+      }
     } catch (error) {
-        console.error('Error:', error.response ? error.response.data : error.message);
+      console.error('Error:', error.response ? error.response.data : error.message);
+      message.error('An error occurred while saving shift times');
     }
-};
+  };
 
 const handleSave3Click = async () => {
   console.log('shift3:',shift3Start , shift3End);
 
   try {
-      const promises = await axios.post('http://192.168.137.83:3000/insertShiftInfo',
-          {
-            startTime: shift3Start,
-            endTime: shift3End,
-          },
-          {
-            headers: { 'Content-Type': 'application/json' }
-          }
-        );
-        console.log('Response:' , promises.data);
-        message.success('Shift 3 times saved successfully');
+    if (!shift3Start || !shift3End) {
+      message.error('Please fill in both start and end times');
+      return;
+    }
+
+    const formatTime = (time) => {
+      const date = new Date(time); // Assuming `time` is a valid date/time string
+      const hours = date.getHours().toString().padStart(2, '0');
+      const minutes = date.getMinutes().toString().padStart(2, '0');
+      const seconds = date.getSeconds().toString().padStart(2, '0');
+      return `${hours}:${minutes}:${seconds}`;
+    };
+
+
+    const checkResponse = await axios.get('http://192.168.137.161:3000/getShiftConfig', {
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    const shiftExists = checkResponse.data.some((shift) => shift.id === 3);
+
+    if (shiftExists) {
+      const response = await axios.put(
+        'http://192.168.137.161:3000/editShiftConfig',
+        {
+          id: 3,
+          startTime: formatTime(shift3Start),
+          endTime: formatTime(shift3End),
+        },
+        {
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+
+      console.log('Update Response:', response.data);
+      message.success('Shift 3 times updated successfully');
+    } else {
+      const response = await axios.post(
+        'http://192.168.137.161:3000/insertShiftInfo',
+        {
+          startTime: formatTime(shift3Start),
+          endTime: formatTime(shift3End),
+        },
+        {
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+
+      console.log('Insert Response:', response.data);
+      message.success('Shift 3 times saved successfully');
+    }
   } catch (error) {
-      console.error('Error:', error.response ? error.response.data : error.message);
+    console.error('Error:', error.response ? error.response.data : error.message);
+    message.error('An error occurred while saving shift times');
   }
 };
 
+
   return (
     <>
-   <div className="flex justify-between items-start p-5 ">
-     <h1 className="text-4xl font-bold text-black mt-3 ml-5">Machine OEE Monitoring</h1>
-     <img className="mr-4" src={logo} alt="Machine OEE Logo" style={{width:'160px' , height:'50px'}} />
-   </div>
+   <div className="flex flex-col md:flex-row justify-between items-center md:items-start p-5">
+  <h1 className="text-2xl md:text-4xl font-bold text-black mt-1 ml-0 md:ml-5 text-center md:text-left">
+    Machine OEE Monitoring
+  </h1>
+  <img
+    className="mt-5 md:mt-0 mr-0 md:mr-4"
+    src={logo}
+    alt="Machine OEE Logo"
+    style={{ width: '150px', height: '50px' }}
+  />
+</div>
    <hr/>
-   <div style={{marginLeft:'1350px', marginTop:'10px'}}>
-    <Button type='primary' onClick={handleButtonClick}>General Config</Button>
-   </div>
+        <div className="flex justify-end mt-[10px] mr-[50px]">
+        <Button type="primary" onClick={handleButtonClick}>
+          General Config
+        </Button>
+         </div>
    <div className="p-5 flex ml-10 mt-7">
                 {machines.map((machine) => (
                     <Card
@@ -306,7 +473,7 @@ const handleSave3Click = async () => {
             <Button type='primary' onClick={handleSave2Click}>Save</Button>
             </div>
 
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' , marginTop:'10px'}}>
+            {/* <div style={{ display: 'flex', gap: '10px', alignItems: 'center' , marginTop:'10px'}}>
             <h3>Shift: 3</h3>
             <TimePicker
               placeholder="Start Time"
@@ -323,7 +490,7 @@ const handleSave3Click = async () => {
               className="w-32"
             />
             <Button type='primary' onClick={handleSave3Click}>Save</Button>
-            </div>
+            </div> */}
            
           </div>
         </Form>
