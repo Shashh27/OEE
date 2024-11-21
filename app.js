@@ -21,6 +21,7 @@ app.use(express.json());
 app.use(cors({ origin: '*' }));
 
 const moment = require('moment-timezone');
+const { start } = require('repl');
 
 let shift_duration;
 let planned_non_production;
@@ -32,13 +33,7 @@ app.get('/getGeneralConfig', async(req, res)=>{
   try {
       const result = await pool.query('select shift_duration, planned_non_production , planned_downtime from new.config_info');
       res.json(result.rows);
-      shift_duration = result.rows[0].shift_duration;
-      planned_non_production = result.rows[0].planned_non_production;
-      planned_downtime = result.rows[0].planned_downtime;
-
-      planned_production = shift_duration - (planned_non_production+planned_downtime);
-      available_idle_time = planned_non_production + planned_downtime;
-
+    
   } catch (error) {
       console.log(error);
   }
@@ -47,12 +42,42 @@ app.get('/getGeneralConfig', async(req, res)=>{
 
 app.get('/getShiftConfig', async(req, res)=>{
   try {
-      const result = await pool.query('select * from new.shift_info');
+      const result = await pool.query('select * from new.shift_info order by id ASC');
       res.json(result.rows);
   } catch (error) {
       console.log(error);
   }
-})
+});
+
+app.put('/editGeneralConfig' ,async(req , res)=>{
+     const {shiftDuration , plannedNonProduction , plannedDowntime} = req.body;
+    try {
+      const result = await pool.query(`update new.config_info set shift_duration=$1 , planned_non_production=$2 , planned_downtime=$3 where id=1`, [shiftDuration , plannedNonProduction, plannedDowntime]);
+      if (result.rowCount > 0) {
+        res.json({ success: true, message: 'Configuration updated successfully' });
+      } else {
+        res.status(404).json({ success: false, message: 'No configuration found with id=1' });
+      }
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  });
+
+app.put('/editShiftConfig', async(req, res)=>{
+  const {id ,startTime , endTime} = req.body;
+  try {
+     const result = await pool.query(`update new.shift_info set start_time=$1 , end_time=$2 where id=$3`, [startTime , endTime ,id]);
+     if (result.rowCount > 0) {
+      res.json({ success: true, message: 'Configuration updated successfully' });
+    } else {
+      res.status(404).json({ success: false, message: 'No configuration found with id' });
+    }
+  } catch (error) {
+      console.error(error);
+      res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
 
 
 function calculateActualProductionTime(records) {
@@ -136,7 +161,7 @@ function calculateActualProductionTime(records) {
 
 const calculateGoodPart = (records) =>{
     let goodpart=0;
-    for(let i=0; i< records.length ; i++){
+    for(let i=0; i< records.length-1 ; i++){
        if(records[i].part_status === 2){
           goodpart++;
        }
@@ -506,7 +531,7 @@ const calculateOffTimeByDate = (records) => {
 };
 
 
-const calculateAvailability = (records) =>{
+const calculateAvailability = (records , available_idle_time , planned_production) =>{
     const idealCycleTime = calculateIdealCycleTime(records);
     const actualProduction = calculateProductionTime(records);
 
@@ -526,7 +551,7 @@ const calculatePerformance = (records) =>{
 
     const performance = (((actualProducedQuantity * idealCycleTime) / actualProduction) * 100).toFixed(2);
 
-    return performance;
+    return performance > 100 ? 100 : performance;
 }
 
 const calculateQuality = (records) =>{
@@ -566,81 +591,133 @@ const calculateMachineSate = (records) =>{
   
 
 
-app.get('/shiftwise', async (req,res)=>{
-    try{
-        
-        const {id , date , shift ,} = req.query;
-        
-        if(!id || !date || !shift){
-            return res.status(400).send('Date and shift are required');
-        }
-        
-        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-        if (!dateRegex.test(date)) {
-            return res.status(400).send('Invalid date format. Use YYYY-MM-DD');
-        }
-        
-        if(shift === '1'){
-            shiftTimings2 = {
-                start:{
-                    time: '08:59:00'
-                },
-                end: {
-                    time: '17:01:00'
-                }
-            }
-        } else if(shift === '2'){
-            shiftTimings2 = {
-                start:{
-                    time: '17:59:00'
-                },
-                end: {
-                    time: '02:01:00'
-                }
-            }
+app.get('/shiftwise', async (req, res) => {
+  try {
+      const { id, date, shift } = req.query;
+
+      // Check if required query parameters are provided
+      if (!id || !date || !shift) {
+          return res.status(400).send('ID, Date, and Shift are required');
+      }
+
+      // Validate date format (YYYY-MM-DD)
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(date)) {
+          return res.status(400).send('Invalid date format. Use YYYY-MM-DD');
+      }
+
+      // Fetch shift info from the database
+      const result3 = await pool.query('SELECT * FROM new.shift_info ORDER BY id ASC');
+      const result5 = result3.rows;
+
+      // Adjust time helper function
+      function adjustTime(time, minutes) {
+          const [hours, mins, secs] = time.split(':').map(Number);
+          const date = new Date();
+          date.setHours(hours, mins, secs);
+          date.setMinutes(date.getMinutes() + minutes); // Adjust minutes
+          return date.toTimeString().split(' ')[0]; // Return formatted time
+      }
+
+      // Find shift record based on shift ID
+      const shiftRecord = result5.find(record => record.id === parseInt(shift));
+
+      if (shiftRecord) {
+          shiftTimings2 = {
+              start: {
+                  time: adjustTime(shiftRecord.start_time, -1) // Subtract 1 minute
+              },
+              end: {
+                  time: adjustTime(shiftRecord.end_time, 1) // Add 1 minute
+              }
+          };
+      } else {
+          console.error('Invalid shift value or no matching record found.');
+          return res.status(400).send('Invalid shift value');
+      }
+
+      // console.log("Shift Timings:", shiftTimings2);
+
+      // Handle case where the shift spans across midnight
+      let result;
+      if (shiftTimings2.start.time > shiftTimings2.end.time) {
+        result = await pool.query(
+          `
+          SELECT timestamp, machine_status, part_status 
+          FROM new.machine_signal_pool 
+          WHERE machine_id = $1 
+            AND (
+                (to_char(timestamp, 'YYYY-MM-DD') = $2 AND to_char(timestamp, 'HH24:MI') >= $3)
+                OR
+                (to_char(timestamp, 'YYYY-MM-DD') = to_char(to_date($2, 'YYYY-MM-DD') + interval '1 day', 'YYYY-MM-DD') 
+                 AND to_char(timestamp, 'HH24:MI') <= $4)
+            )
+          ORDER BY timestamp ASC
+          `,
+          [id, date, shiftTimings2.start.time, shiftTimings2.end.time]
+      );
+        } else {
+            result = await pool.query(
+                'SELECT timestamp, machine_status, part_status FROM new.machine_signal_pool WHERE machine_id = $1 AND to_char(timestamp, \'YYYY-MM-DD\') = $2 AND to_char(timestamp, \'HH24:MI\') BETWEEN $3 AND $4 ORDER BY timestamp ASC',
+                [id, date, shiftTimings2.start.time, shiftTimings2.end.time] 
+            );
         }
 
-        const result= await pool.query(`select timestamp, machine_status , part_status from new.machine_signal_pool WHERE machine_id = $1 AND to_char(timestamp, 'YYYY-MM-DD') = $2  AND to_char(timestamp, 'HH24:MI') BETWEEN $3 AND $4 ORDER BY timestamp ASC`, [id ,date, shiftTimings2.start.time, shiftTimings2.end.time]);
-    
-        result.rows.forEach(row => {
+      // Debug log for raw result rows
+      // console.log("Raw machine signal data:", result.rows);
+
+      // Adjust timestamps to local timezone (Asia/Kolkata)
+      result.rows.forEach(row => {
           row.timestamp = moment(row.timestamp).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');
-         });
+      });
 
-        const machineState = calculateMachineSate(result.rows);
-        const productionTime = calculateProductionTime(result.rows);
-        const idleTime = calculateIdleTime(result.rows);
-        const offTime = calculateOffTime(result.rows);
-        const availability = calculateAvailability(result.rows);
-        const performance = calculatePerformance(result.rows);
-        const quality = calculateQuality(result.rows);
-        const oee = calculateOee(availability , performance , quality);
-        const goodpart = calculateGoodPart(result.rows);
-        const actualProducedQuantity = calculateActualProducedQuantity(result.rows);
-        const badpart = actualProducedQuantity - goodpart;
-        const idealCycleTime = calculateIdealCycleTime(result.rows);
-        const performancedummy = ((actualProducedQuantity * idealCycleTime) / productionTime) * 100
+      // Fetch shift duration and downtime configuration
+      const result2 = await pool.query('SELECT shift_duration, planned_non_production, planned_downtime FROM new.config_info');
+      const shift_duration = result2.rows[0].shift_duration;
+      const planned_non_production = result2.rows[0].planned_non_production;
+      const planned_downtime = result2.rows[0].planned_downtime;
 
-        res.json({
-            MachineState : machineState,
-            ProductionTime : Math.round(productionTime),
-            IdleTime : Math.round(idleTime),
-            OffTime : Math.round(offTime),
-            Availability : availability,
-            Performance : performance,
-            Quality: quality,
-            OEE : oee,
-            PartCount : actualProducedQuantity,
-            GoodPart: goodpart,
-            BadPart : badpart, 
-            Result: result.rows,
-            IdealCycleTime: idealCycleTime,
-            performancedummy: performancedummy,
-        })
-    }
-    catch(error){
-        console.error('Error fetching data:', error);
-        res.status(500).send('Server error');
-    }
+      const planned_production = shift_duration - (planned_non_production + planned_downtime);
+      const available_idle_time = planned_non_production + planned_downtime;
+
+      // Calculate performance metrics (custom functions)
+      const machineState = calculateMachineSate(result.rows);
+      const productionTime = calculateProductionTime(result.rows);
+      const idleTime = calculateIdleTime(result.rows);
+      const offTime = calculateOffTime(result.rows);
+      const availability = calculateAvailability(result.rows, available_idle_time, planned_production);
+      const performance = calculatePerformance(result.rows);
+      const quality = calculateQuality(result.rows);
+      const oee = calculateOee(availability, performance, quality);
+      const goodpart = calculateGoodPart(result.rows);
+      const actualProducedQuantity = calculateActualProducedQuantity(result.rows);
+      const badpart = actualProducedQuantity - goodpart;
+      const idealCycleTime = calculateIdealCycleTime(result.rows);
+      const performancedummy = ((actualProducedQuantity * idealCycleTime) / productionTime) * 100;
+
+      res.json({
+          MachineState: machineState,
+          ProductionTime: Math.round(productionTime),
+          IdleTime: Math.round(idleTime),
+          OffTime: Math.round(offTime),
+          Availability: availability,
+          Performance: performance,
+          Quality: quality,
+          OEE: oee,
+          PartCount: actualProducedQuantity,
+          GoodPart: goodpart,
+          BadPart: badpart,
+          Result: result.rows,
+          IdealCycleTime: idealCycleTime,
+          performancedummy: performancedummy,
+          startTime: shiftTimings2.start.time,
+          endTime: shiftTimings2.end.time,
+          currentDate: date // Use the passed date
+      });
+  } catch (error) {
+      console.error('Error fetching data:', error);
+      res.status(500).send('Server error');
+  }
 });
 
 
@@ -719,10 +796,18 @@ app.get('/analytics' ,async (req, res)=>{
           row.timestamp = moment(row.timestamp).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');
          });
 
+         const result2 = await pool.query('select shift_duration, planned_non_production , planned_downtime from new.config_info');
+          shift_duration = result2.rows[0].shift_duration;
+          planned_non_production = result2.rows[0].planned_non_production;
+          planned_downtime = result2.rows[0].planned_downtime;
+
+          planned_production = shift_duration - (planned_non_production+planned_downtime);
+          available_idle_time = planned_non_production + planned_downtime;
+
         const productionTime = calculateProductionTime(result.rows);
         const idleTime = calculateIdleTimeAnalytics(result.rows);
         const offTime = calculateOffTimeByDate(result.rows);
-        const availability = calculateAvailability(result.rows);
+        const availability = calculateAvailability(result.rows , available_idle_time , planned_production);
         const performance = calculatePerformance(result.rows);
         const quality = calculateQuality(result.rows);
         const oee = calculateOee(availability , performance , quality);
@@ -792,6 +877,14 @@ app.get('/report', async (req, res)=>{
 
         const reportByDate = {};
 
+        const result2 = await pool.query('select shift_duration, planned_non_production , planned_downtime from new.config_info');
+          shift_duration = result2.rows[0].shift_duration;
+          planned_non_production = result2.rows[0].planned_non_production;
+          planned_downtime = result2.rows[0].planned_downtime;
+
+          planned_production = shift_duration - (planned_non_production+planned_downtime);
+          available_idle_time = planned_non_production + planned_downtime;
+
         for (const date in dataByDate) {
             if (dataByDate.hasOwnProperty(date)) {
                 const records = dataByDate[date];
@@ -799,11 +892,11 @@ app.get('/report', async (req, res)=>{
                   productionTimeByDate:  Math.round(calculateProductionTime(records)),
                   idleTimeByDate: Math.round(calculateIdleTimeAnalytics(records)),
                   offTimeByDate: Math.round(calculateOffTimeByDate(records)),
-                  availabilityByDate: calculateAvailability(records),
+                  availabilityByDate: calculateAvailability(records , available_idle_time , planned_production),
                   performanceByDate: calculatePerformance(records),
                   qualityByDate: calculateQuality(records),
                   oeeByDate: calculateOee(
-                      calculateAvailability(records),
+                      calculateAvailability(records , available_idle_time , planned_production),
                       calculatePerformance(records),
                       calculateQuality(records)
                   ),
@@ -894,43 +987,73 @@ io.on('connection', (socket) => {
 
   const id = socket.handshake.query.id; // Access the id from the query parameters
 
-  console.log('Client connected to machine data');
+  // console.log('Client connected to machine data');
 
-  // Function to fetch data and emit it to the client
   const fetchLiveData = async () => {
     try {
       let shiftTimings4;
       const currentHour4 = new Date().getHours(); // Get the current hour (0-23)
 
-      if (currentHour4 >= 9 && currentHour4 < 18) {
+      const result4 = await pool.query('SELECT * FROM new.shift_info ORDER BY id ASC');
+
+      // Utility function to adjust time by minutes
+      function adjustTime(time, minutes) {
+          const [hours, mins, secs] = time.split(':').map(Number);
+          const date = new Date();
+          date.setHours(hours, mins, secs);
+          date.setMinutes(date.getMinutes() + minutes); // Adjust minutes
+          return date.toTimeString().split(' ')[0]; // Return formatted time
+      }
+      const getHourFromTime = (timeString) => parseInt(timeString.split(':')[0], 10);
+
+      if (currentHour4 >= getHourFromTime(result4.rows[0].start_time) && currentHour4 < getHourFromTime(result4.rows[1].start_time)) {
         shiftTimings4 = {
           start: {
-            time: '08:59:00'
+            time: adjustTime(result4.rows[0].start_time , -1)
           },
           end: {
-            time: '17:01:00'
+            time: adjustTime(result4.rows[0].end_time , +1)
           }
-        };
+        }
       } else {
         shiftTimings4 = {
           start: {
-            time: '17:59:00'
+            time: adjustTime(result4.rows[1].start_time , -1)
           },
           end: {
-            time: '02:01:00'
+            time: adjustTime(result4.rows[1].end_time , +1)
           }
-        };
+        }
       }
-              let machineState ='';
-              const result2 = await pool.query(
-                `SELECT machine_status 
-                 FROM new.machine_signal_pool
-                 WHERE machine_id = $1 AND to_char(timestamp, 'YYYY-MM-DD') = $2
-                 AND to_char(timestamp, 'HH24:MI') BETWEEN $3 AND $4
-                 ORDER BY timestamp DESC 
-                 LIMIT 1`,
-                [id , currentDate , shiftTimings4.start.time , shiftTimings4.end.time]
-            );
+      let result2;
+      if (shiftTimings4.start.time > shiftTimings4.end.time) {
+        result2 = await pool.query(
+          `
+          SELECT  machine_status
+          FROM new.machine_signal_pool 
+          WHERE machine_id = $1 
+            AND (
+                (to_char(timestamp, 'YYYY-MM-DD') = $2 AND to_char(timestamp, 'HH24:MI') >= $3)
+                OR
+                (to_char(timestamp, 'YYYY-MM-DD') = to_char(to_date($2, 'YYYY-MM-DD') + interval '1 day', 'YYYY-MM-DD') 
+                 AND to_char(timestamp, 'HH24:MI') <= $4)
+            )
+          ORDER BY timestamp DESC
+          LIMIT 1
+          `,
+          [id, currentDate, shiftTimings4.start.time, shiftTimings4.end.time]
+      );
+        } else {
+          result2 = await pool.query(
+            `SELECT machine_status 
+             FROM new.machine_signal_pool
+             WHERE machine_id = $1 AND to_char(timestamp, 'YYYY-MM-DD') = $2
+             AND to_char(timestamp, 'HH24:MI') BETWEEN $3 AND $4
+             ORDER BY timestamp DESC
+             LIMIT 1`,
+            [id , currentDate , shiftTimings4.start.time , shiftTimings4.end.time]
+        );
+        }
     
             if (result2.rows.length > 0) {
                     machineState = result2.rows[0].machine_status;
@@ -938,28 +1061,24 @@ io.on('connection', (socket) => {
                 machineState = 'Null';
             }
 
-
               const now = new Date();
               const nextDay = new Date(now.getTime() + 24 * 60 * 60 * 1000);
               const currentHour2 = now.getHours();
           
-              // Define shift times
-              const shift1 = { start: 9, end: 17 }; // 9 AM to 5 PM
-              const shift2 = { start: 18, end: 2 }; // 6 PM to 2 AM (next day)
-          
               let currentShift;
               let shiftTimings;
-          
-              if (currentHour2 >= shift1.start && currentHour2 < shift2.start) {
+
+            
+              if (currentHour2 >= getHourFromTime(result4.rows[0].start_time) && currentHour2 < getHourFromTime(result4.rows[1].start_time)) {
                 currentShift = '1';
                 shiftTimings = {
                   start: {
                     date: now.toLocaleDateString(),
-                    time: '09:00:00'
+                    time: result4.rows[0].start_time
                   },
                   end: {
                     date: now.toLocaleDateString(),
-                    time: '17:00:00'
+                    time: result4.rows[0].end_time
                   }
                 }
               } else {
@@ -967,54 +1086,58 @@ io.on('connection', (socket) => {
                 shiftTimings = {
                   start: {
                     date: now.toLocaleDateString(),
-                    time: '18:00:00'
+                    time: result4.rows[1].start_time
                   },
                   end: {
                     date: nextDay.toLocaleDateString(),
-                    time: '02:00:00'
+                    time: result4.rows[1].end_time
                   }
                 };
               }
 
-      let shiftTimings3;
-      const currentHour = new Date().getHours(); // Get the current hour (0-23)
-
-      if (currentHour >= 9 && currentHour < 18) {
-        shiftTimings3 = {
-          start: {
-            time: '08:59:00'
-          },
-          end: {
-            time: '17:01:00'
-          }
-        };
-      } else {
-        shiftTimings3 = {
-          start: {
-            time: '17:59:00'
-          },
-          end: {
-            time: '02:01:00'
-          }
-        };
-      }
-
-      const result = await pool.query(
-        `SELECT timestamp, machine_status, part_status 
-         FROM new.machine_signal_pool 
-         WHERE machine_id = $1 AND to_char(timestamp, 'YYYY-MM-DD') = $2
-         AND to_char(timestamp, 'HH24:MI') BETWEEN $3 AND $4 ORDER BY timestamp ASC`,
-        [id , currentDate, shiftTimings3.start.time, shiftTimings3.end.time]
+    
+      let result;
+      if (shiftTimings4.start.time > shiftTimings4.end.time) {
+        result = await pool.query(
+          `
+          SELECT timestamp, machine_status, part_status 
+          FROM new.machine_signal_pool 
+          WHERE machine_id = $1 
+            AND (
+                (to_char(timestamp, 'YYYY-MM-DD') = $2 AND to_char(timestamp, 'HH24:MI') >= $3)
+                OR
+                (to_char(timestamp, 'YYYY-MM-DD') = to_char(to_date($2, 'YYYY-MM-DD') + interval '1 day', 'YYYY-MM-DD') 
+                 AND to_char(timestamp, 'HH24:MI') <= $4)
+            )
+          ORDER BY timestamp ASC
+          `,
+          [id, currentDate, shiftTimings4.start.time, shiftTimings4.end.time]
       );
+        } else {
+            result = await pool.query(
+                `SELECT timestamp, machine_status, part_status FROM new.machine_signal_pool WHERE machine_id = $1 AND to_char(timestamp, \'YYYY-MM-DD\') = $2 AND to_char(timestamp, \'HH24:MI\') BETWEEN $3 AND $4 ORDER BY timestamp ASC`,
+                [id, currentDate, shiftTimings4.start.time, shiftTimings4.end.time] 
+            );
+        } 
 
       result.rows.forEach(row => {
         row.timestamp = moment(row.timestamp).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');
       });
 
+      // console.log(result.rows , shiftTimings4.start.time, shiftTimings4.end.time);
+
+      const result3 = await pool.query('select shift_duration, planned_non_production , planned_downtime from new.config_info');
+          shift_duration = result3.rows[0].shift_duration;
+          planned_non_production = result3.rows[0].planned_non_production;
+          planned_downtime = result3.rows[0].planned_downtime;
+
+          planned_production = shift_duration - (planned_non_production+planned_downtime);
+          available_idle_time = planned_non_production + planned_downtime;
+
       const productionTime = calculateProductionTime(result.rows);
       const idleTime = calculateIdleTime(result.rows);
       const offTime = calculateOffTime(result.rows);
-      const availability = calculateAvailability(result.rows);
+      const availability = calculateAvailability(result.rows , available_idle_time , planned_production);
       const performance = calculatePerformance(result.rows);
       const quality = calculateQuality(result.rows);
       const oee = calculateOee(availability, performance, quality);
@@ -1059,7 +1182,7 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     clearInterval(interval);
-    console.log('Client disconnected');
+    // console.log('Client disconnected');
   });
 });
 
@@ -1083,11 +1206,18 @@ io.on('connection', (socket) => {
         result.rows.forEach(row => {
           row.timestamp = moment(row.timestamp).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');
         });
+        const result2 = await pool.query('select shift_duration, planned_non_production , planned_downtime from new.config_info');
+          shift_duration = result2.rows[0].shift_duration;
+          planned_non_production = result2.rows[0].planned_non_production;
+          planned_downtime = result2.rows[0].planned_downtime;
+
+          planned_production = shift_duration - (planned_non_production+planned_downtime);
+          available_idle_time = planned_non_production + planned_downtime;
   
         const productionTime = calculateProductionTime(result.rows);
         const idleTime = calculateIdleTime(result.rows);
         const offTime = calculateOffTime(result.rows);
-        const availability = calculateAvailability(result.rows);
+        const availability = calculateAvailability(result.rows , available_idle_time , planned_production);
         const performance = calculatePerformance(result.rows);
         const quality = calculateQuality(result.rows);
         const oee = calculateOee(availability, performance, quality);
@@ -1112,8 +1242,7 @@ io.on('connection', (socket) => {
        } catch (error) {
            console.log(error);
        }
-       
-  })
+  });
 
   app.post('/insertGeneralConfig', async (req, res) => {
     try {
